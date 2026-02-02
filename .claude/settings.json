@@ -1,0 +1,149 @@
+{
+  "defaultMode": "acceptEdits",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Edit(src/**)",
+      "Edit(.claude/**)",
+      "Edit(.taskmaster/**)",
+      "Edit(package.json)",
+      "Edit(tsconfig.json)",
+      "Edit(eslint.config.js)",
+      "Edit(.eslintrc*)",
+      "Edit(.prettierrc*)",
+      "Edit(Dockerfile)",
+      "Edit(docker-compose*.yml)",
+      "Edit(.env.example)",
+      "Edit(.gitignore)",
+      "Edit(.dockerignore)",
+      "Edit(CLAUDE.md)",
+      "Edit(README.md)",
+      "Write(src/**)",
+      "Write(.claude/**)",
+      "Write(.taskmaster/**)",
+      "Write(dist/**)",
+      "Write(tests/**)",
+      "Write(docker/**)",
+      "Bash(npm run dev)",
+      "Bash(npm run build)",
+      "Bash(npm run start)",
+      "Bash(npm run lint)",
+      "Bash(npm run lint:fix)",
+      "Bash(npm run format)",
+      "Bash(npm run format:check)",
+      "Bash(npm run test)",
+      "Bash(npm install:*)",
+      "Bash(npm ci:*)",
+      "Bash(npm list:*)",
+      "Bash(npm outdated:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(tsc:*)",
+      "Bash(ts-node:*)",
+      "Bash(docker build:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(docker ps:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(mkdir:*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(tree:*)",
+      "Bash(pwd)",
+      "Bash(echo:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(task-master :*)",
+      "Skill(tm:*)",
+      "mcp__task_master_ai__*",
+      "Bash(npm run build && npm run lint)",
+      "Bash(npm run test:unit:*)",
+      "Bash(npm run test:integration:*)",
+      "Edit(tests/**)",
+      "Task(tdd-test-writer:*)",
+      "Task(tdd-implementer:*)",
+      "Task(tdd-refactorer:*)",
+      "Task(tdd-code-reviewer:*)",
+      "Task(tdd-architect-reviewer:*)",
+      "Skill(tdd-integration)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(./secrets/**)",
+      "Read(.git/config)",
+      "Write(.env)",
+      "Write(.env.*)",
+      "Write(./secrets/**)",
+      "Write(.git/**)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf .)",
+      "Bash(rm -rf :*)",
+      "Bash(sudo:*)",
+      "Bash(chmod 777:*)",
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(docker rm:*)",
+      "Bash(docker rmi:*)",
+      "Bash(docker volume rm:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(git rebase:*)",
+      "Bash(git merge:*)",
+      "Bash(git reset:*)",
+      "Edit(package-lock.json)",
+      "Write(package.json)",
+      "Write(package-lock.json)",
+      "Write(tsconfig.json)",
+      "Bash(npm publish:*)",
+      "Bash(docker-compose rm:*)"
+    ]
+  },
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "0",
+    "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"
+  },
+  "attribution": {
+    "pr": ""
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx tsx \"$CLAUDE_PROJECT_DIR/.claude/hooks/prevent-test-edit.ts\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx tsx \"$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-skill-eval.ts\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+# Claude Code runtime state
+.claude/.guard-state.json
+
+# Personal overrides (not committed)
+.claude/settings.local.json
+
+# Task Master runtime
+.taskmaster/tasks/*.json
+.taskmaster/reports/*.md
+
+# Common development files
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
