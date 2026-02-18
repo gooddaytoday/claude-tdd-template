@@ -64,7 +64,7 @@ Expect from caller:
 
 Use AskUserQuestion only when no directive, no testStrategy, and heuristic scores are equal:
 
-```
+```text
 Question: "What type of test should I write for this feature?"
 Options:
   1. "Unit test" - Fast, isolated, mock all external dependencies
