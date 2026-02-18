@@ -66,9 +66,14 @@ Keep entries **concise and factual** — task-master stores history; CLAUDE.md i
 ```typescript
 function isLastSubtask(parentTask, subtaskId) {
   const subtasks = parentTask.subtasks;
+  const childId = subtaskId.split('.')[1];
+  if (!childId) return false;
+
   const currentIndex = subtasks.findIndex(
-    s => s.id.toString() === subtaskId.split('.')[1]
+    s => s.id.toString() === childId
   );
+  if (currentIndex === -1) return false;
+
   const allPreviousDone = subtasks
     .slice(0, currentIndex)
     .every(s => s.status === 'done');
