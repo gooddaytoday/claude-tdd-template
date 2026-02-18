@@ -280,7 +280,7 @@ Invoke `tdd-architect-reviewer` subagent with:
 - Files modified in all previous phases (combined `Changed files`)
 - Whether this is the last subtask in parent task
 
-**Gate**: Do NOT complete cycle if `Status: needs-fix` or `Status: integration-subtask-created` without resolution.
+**Gate**: Do NOT proceed to Documentation if `Status: needs-fix`. If `Status: integration-subtask-created`, the architecture phase is resolved — proceed to DOCUMENTATION (integration is deferred to the next TDD cycle via the created subtask).
 
 **Phase Packet to include in delegation:**
 ```
@@ -385,7 +385,7 @@ RED -> GREEN -> REFACTOR -> CODE REVIEW
                  main: route FixRequest to implementer
                               ↓ fixed
                     re-invoke ARCHITECTURE REVIEW
-                              ↓ passed
+                              ↓ passed | integration-subtask-created
                         DOCUMENTATION
                               ↓ saved
                             DONE ✓
