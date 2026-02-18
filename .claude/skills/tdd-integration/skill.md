@@ -49,7 +49,7 @@ Examples:
   - `PreToolUse:Write|Edit` → Blocks `tests/**` modifications if subagent is NOT `tdd-test-writer`
 - **Phase Rules**:
   - GREEN phase (implementer): Cannot touch tests → automatic rejection
-  - REFACTOR phase (refactorer): Cannot touch tests → automatic rejection  
+  - REFACTOR phase (refactorer): Cannot touch tests → automatic rejection
   - RED phase (test-writer): Can freely modify tests
   - Main agent (after subagent completes): Can modify tests
 
@@ -77,13 +77,6 @@ If the current task ID contains a dot (e.g., "5.2"), this is a **subtask**:
 - Retrieve parent task using: `task-master show <parentId>`
 - Store parent task context (title, description, details, testStrategy) for use in ALL phases
 
-Example:
-```bash
-# If current task is "5.2" (subtask)
-# Extract parent ID: "5"
-task-master show 5  # Get parent task context
-```
-
 **CRITICAL: Parent Task Context Usage Rule**
 
 Parent task context serves ONLY as background information:
@@ -91,11 +84,6 @@ Parent task context serves ONLY as background information:
 - ✅ Use it to ensure your subtask aligns with parent task's vision
 - ❌ DO NOT implement other subtasks mentioned in parent task
 - ❌ DO NOT expand scope beyond current subtask
-
-**Example**: If working on subtask "5.1: Write unit tests", parent task shows subtasks 5.2, 5.3, 5.4:
-- ✅ Understand parent goal to write proper tests for 5.1
-- ❌ DO NOT implement code from 5.2, 5.3, or 5.4
-- Focus ONLY on 5.1's specific scope
 
 **Step 3: Determine Test Type**
 
@@ -126,47 +114,6 @@ Parent task context serves ONLY as background information:
 
 **Output**: Pass `test_type` to RED phase delegation.
 
-**Decision Flowchart:**
-```
-┌─────────────────────────────────────┐
-│  TDD Integration Skill Triggered    │
-└─────────────────┬───────────────────┘
-                  ▼
-┌─────────────────────────────────────┐
-│  Get current task from task-master  │
-└─────────────────┬───────────────────┘
-                  ▼
-┌─────────────────────────────────────┐
-│  Is task ID format "X.Y"? (subtask) │
-│  YES ───────────────────────────────┼──► Get parent task (ID "X")
-└─────────────────┬───────────────────┘    Store parent context
-                  │ NO (standalone)
-                  ▼ (continue)
-┌─────────────────────────────────────┐
-│  --test-type argument provided?     │
-│  YES ───────────────────────────────┼──► Use specified type
-└─────────────────┬───────────────────┘
-                  │ NO
-                  ▼
-┌─────────────────────────────────────┐
-│  Check testStrategy in task+parent  │
-│  Has clear indicator?               │
-│  YES ───────────────────────────────┼──► Use detected type
-└─────────────────┬───────────────────┘
-                  │ NO/Ambiguous
-                  ▼
-┌─────────────────────────────────────┐
-│  Apply keyword heuristics           │
-│  Score diff > 0?                    │
-│  YES ───────────────────────────────┼──► Use type with higher score
-└─────────────────┬───────────────────┘
-                  │ NO (equal scores)
-                  ▼
-┌─────────────────────────────────────┐
-│  Ask user via AskUserQuestion       │
-└─────────────────────────────────────┘
-```
-
 ### Phase 1: RED - Write Failing Test
 
 Invoke `tdd-test-writer` subagent with:
@@ -177,7 +124,7 @@ Invoke `tdd-test-writer` subagent with:
 
 **Gate**: Do NOT proceed to Green until test failure confirmed.
 
-Example delegation:
+**Phase Packet to include in delegation:**
 ```
 Task: tdd-test-writer
 Prompt: Write failing tests for: [feature description]
@@ -193,6 +140,17 @@ Task context:
 Scope restriction: Work ONLY on current subtask [ID]. Do NOT implement other subtasks.
 ```
 
+**Expected output from tdd-test-writer (Phase Packet):**
+```
+Phase: RED
+AgentTaskStatus: completed | failed  (agent's own run outcome)
+TestRunStatus: failed                (must be "failed" = test confirmed failing as expected)
+Test file: [path]
+Test command: [exact command]
+Changed files: [test files written]
+Notes: [any observations]
+```
+
 **Note**: If `test_type = both`, run RED phase twice:
 1. First for unit tests
 2. Then for integration tests
@@ -200,109 +158,132 @@ Scope restriction: Work ONLY on current subtask [ID]. Do NOT implement other sub
 ### Phase 2: GREEN - Make It Pass
 
 Invoke `tdd-implementer` subagent with:
-- Test file path from RED phase
+- Test file path and test command from RED Phase Packet
 - Feature requirement context
 - **Parent task context** (if current task is a subtask)
 
 **Gate**: Do NOT proceed to Refactor until test passes.
 
-Example delegation:
+**Phase Packet to include in delegation:**
 ```
 Task: tdd-implementer
 Prompt: Implement minimal code to pass tests in: [test file path]
+Test command: [exact command from RED phase]
 Feature context: [what we're building]
 Task context:
 - Current: Task [ID] / Subtask [ID]
 - Parent: Task [ID] (if subtask)
-  - Title: [parent title]
-  - Description: [parent description]
 Scope restriction: Work ONLY on current subtask [ID]. Do NOT implement other subtasks.
+```
+
+**Expected output from tdd-implementer (Phase Packet):**
+```
+Phase: GREEN
+Status: passed
+Test file: [path]
+Test command: [command]
+Changed files: [list of implementation files]
+Diff inventory: [which exports/APIs changed]
+Notes: [any observations]
 ```
 
 ### Phase 3: REFACTOR - Improve
 
 Invoke `tdd-refactorer` subagent with:
-- Test file path
-- Implementation files from GREEN phase
+- Test file path and test command from RED Phase Packet
+- Implementation files from GREEN Phase Packet `Changed files`
 - **Parent task context** (if current task is a subtask)
 
 **Gate**: Do NOT proceed to Code Review until refactoring complete and tests green.
 
-Example delegation:
+**Phase Packet to include in delegation:**
 ```
 Task: tdd-refactorer
 Prompt: Evaluate and refactor implementation for: [test file path]
-Implementation files: [list of files modified in GREEN phase]
+Test command: [exact command from RED phase]
+Implementation files: [list from GREEN phase Changed files]
 Task context:
 - Current: Task [ID] / Subtask [ID]
 - Parent: Task [ID] (if subtask)
-  - Title: [parent title]
-  - Description: [parent description]
 Scope restriction: Work ONLY on current subtask [ID]. Do NOT implement other subtasks.
+```
+
+**Expected output from tdd-refactorer (Phase Packet):**
+```
+Phase: REFACTOR
+Status: passed
+Test file: [path]
+Test command: [command]
+Changed files: [list of refactored files, or "none"]
+Preserved invariants: [list of architectural invariants not touched]
+Notes: [rationale if no refactoring done]
 ```
 
 ### Phase 4: CODE REVIEW - Verify Quality
 
 Invoke `tdd-code-reviewer` subagent with:
-- Files modified in GREEN and REFACTOR phases
+- Files modified across RED, GREEN, REFACTOR phases (combined `Changed files`)
 - Test file path for context
 - **Parent task context** (if current task is a subtask)
 
-**Gate**: Do NOT proceed to Architecture Review if critical/major issues found.
+**Gate**: Do NOT proceed to Architecture Review if `Status: needs-fix` returned.
 
-The code reviewer will:
-- Check TypeScript typing quality (no `any`, proper generics)
-- Verify error handling (try/catch, custom errors)
-- Validate Clean Code principles (SRP, DRY, naming)
-- Check security issues (input validation, injection prevention)
-- Auto-fix issues by invoking `tdd-implementer` or `tdd-refactorer`
-
-Example delegation:
+**Phase Packet to include in delegation:**
 ```
 Task: tdd-code-reviewer
 Prompt: Review code quality for files modified in current subtask.
 Test file: [test file path]
-Modified files: [list of implementation files]
+Modified files: [combined list from RED+GREEN+REFACTOR Changed files]
+Test command: [exact command]
 Task context:
 - Current: Task [ID] / Subtask [ID]
 - Parent: Task [ID] (if subtask)
-  - Title: [parent title]
-  - Description: [parent description]
 Scope restriction: Work ONLY on current subtask [ID]. Do NOT implement other subtasks.
 ```
 
-**If issues found:******
-- Code reviewer automatically delegates fixes to appropriate subagent
-- Re-runs tests to verify fixes
-- Re-reviews until no critical/major issues remain
+**Expected output from tdd-code-reviewer (Phase Packet):**
+```
+Phase: CODE_REVIEW
+Status: passed | needs-fix
+Test command: [command]
+Changed files: [same list reviewed]
+FixRequest: none | [structured FixRequest items]
+Notes: [risks/debt observed]
+```
+
+**Fix-routing logic (execute in main orchestrator if Status = needs-fix):**
+
+```
+1. Parse FixRequest[] from code-reviewer output
+2. Group by routeTo:
+   - "implementer" items → invoke tdd-implementer with fix instructions
+   - "refactorer" items → invoke tdd-refactorer with fix instructions
+3. After each fix subagent completes:
+   - Run test command to confirm tests still pass
+   - If tests fail: invoke tdd-implementer again with diagnosis
+4. Re-invoke tdd-code-reviewer with same file list
+5. Repeat until Status = passed (max 3 cycles; escalate to user if exceeded)
+```
+
+**Delegation for fix:**
+```
+Task: tdd-implementer | tdd-refactorer
+Prompt: Fix issues identified by code reviewer:
+[FixRequest details: file, location, description, proposedFix]
+Verification: run [verificationCommand] after fix
+Keep all existing tests passing.
+```
 
 ### Phase 5: ARCHITECTURE REVIEW - Ensure Integration
 
 Invoke `tdd-architect-reviewer` subagent with:
 - **Task-master context (current task + parent task if subtask)** - MANDATORY
-- Files modified in all previous phases
-- Project structure information
+- Files modified in all previous phases (combined `Changed files`)
+- Whether this is the last subtask in parent task
 
-**Gate**: Do NOT complete cycle if code is not properly integrated.
+**Gate**: Do NOT proceed to Documentation if `Status: needs-fix`. If `Status: integration-subtask-created`, the architecture phase is resolved — proceed to DOCUMENTATION (integration is deferred to the next TDD cycle via the created subtask).
 
-**Obtaining Parent Task Context (if current task is a subtask):**
-
-If current task ID is format "X.Y":
-1. Extract parent ID "X"
-2. Run: `task-master show X`
-3. Include parent task full details in delegation
-
-The architecture reviewer will:
-- Verify code follows project structure conventions
-- Check integration with existing services/models/handlers
-- Validate no circular dependencies
-- Confirm code is not "hanging in the air" unconnected
-- Understand parent task context to ensure proper integration with parent's goals
-- **On LAST subtask**: Perform FULL TASK REVIEW - gather files from ALL completed subtasks, build integration matrix
-- Create integration subtask via task-master if needed (last subtask scenario)
-- Auto-fix structure issues by invoking `tdd-implementer`
-
-Example delegation:
+**Phase Packet to include in delegation:**
 ```
 Task: tdd-architect-reviewer
 Prompt: Review architecture and integration for current subtask.
@@ -315,49 +296,53 @@ Task context:
   - testStrategy: [parent testStrategy]
   - Subtasks: [FULL list of ALL subtasks with IDs, titles, statuses, and details fields]
     Example: [{id:1, title:"...", status:"done", details:"..."}, {id:2, ...}, ...]
-Modified files (current cycle): [list of files modified in RED, GREEN, REFACTOR, CODE REVIEW phases]
+Modified files (all phases): [combined Changed files from RED, GREEN, REFACTOR, CODE REVIEW]
+Last subtask: [yes/no]
 Scope restriction: Work ONLY on current subtask [ID]. Do NOT implement other subtasks.
 
 NOTE: If this is the LAST subtask (highest ID in parent.subtasks array),
-      perform FULL TASK REVIEW per Section 6 of architect reviewer instructions.
-      This includes gathering files from ALL completed subtasks and building integration matrix.
+      perform FULL TASK REVIEW per .claude/skills/tdd-integration/forms/architect-full-task-review.md
 ```
 
-**If this is the last subtask:**
-- Architect reviewer performs FULL TASK REVIEW (Section 6)
-- Reviews ALL files from ALL completed subtasks, not just current cycle
-- Builds integration matrix for entire parent task
-- Creates integration subtask if ANY component is orphaned
+**Expected output from tdd-architect-reviewer (Phase Packet):**
+```
+Phase: ARCHITECTURE
+Status: passed | needs-fix | integration-subtask-created
+Context: Task [ID], Subtask [ID], Last subtask: Yes/No
+Files reviewed: N
+IntegrationVerdict: [summary]
+FixRequest: none | [structured FixRequest items]
+Notes: [architecture risks]
+```
 
-**If integration missing (last subtask):**
-- Architect reviewer creates new subtask via `task-master add-subtask`
-- New subtask will handle integration in next TDD cycle
+**Fix-routing logic (execute in main orchestrator if Status = needs-fix):**
+
+```
+1. Parse FixRequest[] from architect-reviewer output
+2. All architecture FixRequests route to implementer (moving files, adding imports)
+3. Invoke tdd-implementer with fix instructions
+4. Run tests to confirm green
+5. Re-invoke tdd-architect-reviewer
+6. Repeat until Status = passed or integration-subtask-created (max 3 cycles;
+   if exceeded: create integration-subtask for remaining issues via task-master
+   and escalate to user with summary of unresolved FixRequests)
+```
+
+**If integration subtask created:**
+- Architecture phase is complete — integration is deferred to next TDD cycle
+- Proceed to DOCUMENTATION phase
+- Report integration subtask ID in cycle summary
 
 ### Phase 6: DOCUMENTATION - Save Implementation Details
 
 Invoke `tdd-documenter` subagent with:
 - **Task-master context (current task + parent task if subtask)** - MANDATORY
-- List of all files modified in all previous phases
-- All details from CODE REVIEW and ARCHITECTURE REVIEW phases
+- List of all files modified in all previous phases (combined)
+- Whether this is the last subtask
 
 **Gate**: Do NOT proceed to next subtask without documentation saved.
 
-**Obtaining Parent Task Context (if current task is a subtask):**
-
-If current task ID is format "X.Y":
-1. Extract parent ID "X"
-2. Run: `task-master show X`
-3. Include parent task full details in delegation
-
-The documenter will:
-- Save implementation details to the current subtask in task-master
-- Record architectural decisions, patterns, and components
-- Understand parent task context to document how this subtask contributes to parent goals
-- For last subtask only: Create/update `src/<module>/CLAUDE.md` with comprehensive documentation
-- For last subtask only: Add link to module documentation in root `CLAUDE.md`
-- Detect module by analyzing modified files (use directory with most changes)
-
-Example delegation:
+**Phase Packet to include in delegation:**
 ```
 Task: tdd-documenter
 Prompt: Document implementation for current subtask.
@@ -367,22 +352,20 @@ Task context:
   - Title: [parent title]
   - Description: [parent description]
   - Details: [parent details]
-Scope restriction: Work ONLY on current subtask [ID]. Do NOT implement other subtasks.
-Modified files: [list of all files from all phases]
+Modified files: [combined list from all phases]
 Is last subtask: [yes/no]
+Scope restriction: Work ONLY on current subtask [ID]. Do NOT implement other subtasks.
 ```
 
-**Module Detection Logic:**
-- Analyze only files in `src/**/*.ts`
-- Ignore root files like `src/index.ts`
-- Count files by first-level directory in `src/`
-- Use directory with most modified files as module name
-- If tie, use alphabetically first directory
-
-**Documentation Output (for last subtask):**
-- File: `src/<module>/CLAUDE.md`
-- Contains: Overview, Implementation Details, Components, Architecture, Testing, Usage Examples, Related Tasks
-- Root `CLAUDE.md` updated with link to module documentation
+**Expected output from tdd-documenter (Phase Packet):**
+```
+Phase: DOCUMENTATION
+Status: passed
+Modules documented: [list]
+Task-master update: saved
+Module CLAUDE.md: [created/updated/skipped]
+Notes: [any documentation notes]
+```
 
 ## Workflow for Multiple Features
 
@@ -390,20 +373,23 @@ Complete full cycle for EACH feature:
 ```
 Feature 1: RED -> GREEN -> REFACTOR -> CODE REVIEW -> ARCHITECTURE REVIEW -> DOCUMENTATION
 Feature 2: RED -> GREEN -> REFACTOR -> CODE REVIEW -> ARCHITECTURE REVIEW -> DOCUMENTATION
-Feature 3: RED -> GREEN -> REFACTOR -> CODE REVIEW -> ARCHITECTURE REVIEW -> DOCUMENTATION
 ```
 
-**Flow with auto-fixes:**
+**Flow with fix-routing:**
 ```
 RED -> GREEN -> REFACTOR -> CODE REVIEW
-                              ↓ issues found
-                            GREEN (fix) -> REFACTOR (verify)
-                              ↓ approved
-                          ARCHITECTURE REVIEW
-                              ↓ structure issues
-                            GREEN (fix) -> verify
-                              ↓ approved
-                          DOCUMENTATION
+                              ↓ needs-fix
+                 main: route FixRequest to implementer/refactorer
+                              ↓ fixed + tests pass
+                         re-invoke CODE REVIEW
+                              ↓ passed
+                       ARCHITECTURE REVIEW
+                              ↓ needs-fix
+                 main: route FixRequest to implementer
+                              ↓ fixed
+                    re-invoke ARCHITECTURE REVIEW
+                              ↓ passed | integration-subtask-created
+                        DOCUMENTATION
                               ↓ saved
                             DONE ✓
 ```
@@ -412,15 +398,16 @@ RED -> GREEN -> REFACTOR -> CODE REVIEW
 
 Never do this:
 - Write implementation before test
-- Proceed to Green without Red fail
+- Proceed to Green without Red fail confirmed
 - Skip Refactor evaluation
 - Skip Code Review phase
 - Skip Architecture Review phase
 - Skip Documentation phase
 - Start new feature before current cycle completes
 - Modify tests during GREEN, REFACTOR, CODE REVIEW, ARCHITECTURE REVIEW, or DOCUMENTATION phases
-- Ignore critical/major issues from reviewers
+- Ignore needs-fix status from reviewers
 - Proceed to next subtask without documentation saved
+- Route fixes from within reviewer subagents (that is the main orchestrator's job)
 
 ## Status Reporting
 
