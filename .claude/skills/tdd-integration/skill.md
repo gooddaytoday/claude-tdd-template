@@ -322,7 +322,9 @@ Notes: [architecture risks]
 3. Invoke tdd-implementer with fix instructions
 4. Run tests to confirm green
 5. Re-invoke tdd-architect-reviewer
-6. Repeat until Status = passed or integration-subtask-created
+6. Repeat until Status = passed or integration-subtask-created (max 3 cycles;
+   if exceeded: create integration-subtask for remaining issues via task-master
+   and escalate to user with summary of unresolved FixRequests)
 ```
 
 **If integration subtask created:**
