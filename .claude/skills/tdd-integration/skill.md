@@ -143,7 +143,8 @@ Scope restriction: Work ONLY on current subtask [ID]. Do NOT implement other sub
 **Expected output from tdd-test-writer (Phase Packet):**
 ```
 Phase: RED
-Status: passed | failed (must be "passed" = test confirmed failing)
+AgentTaskStatus: completed | failed  (agent's own run outcome)
+TestRunStatus: failed                (must be "failed" = test confirmed failing as expected)
 Test file: [path]
 Test command: [exact command]
 Changed files: [test files written]

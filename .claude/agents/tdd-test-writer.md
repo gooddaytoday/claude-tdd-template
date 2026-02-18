@@ -118,7 +118,8 @@ Before returning output, verify:
 ## RED Phase Complete
 
 **Phase**: RED
-**Status**: passed
+**AgentTaskStatus**: completed
+**TestRunStatus**: failed
 **Test file**: `tests/unit/feature.test.ts`
 **Test command**: `npm run test:unit -- tests/unit/feature.test.ts`
 **Test type**: Unit | Integration
