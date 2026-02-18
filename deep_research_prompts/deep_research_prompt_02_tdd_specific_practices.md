@@ -13,15 +13,15 @@
 Pre-Phase: Determine test type + Get parent task context from Task Master
     ↓
 Phase 1 (RED): tdd-test-writer → пишет failing тесты
-    ↓ Gate: тест ДОЛЖЕН упасть
+    ↓ Gate: тест ДОЛЖЕН упасть (assertion error, не syntax/import error)
 Phase 2 (GREEN): tdd-implementer → минимальная реализация
     ↓ Gate: тест ДОЛЖЕН пройти
 Phase 3 (REFACTOR): tdd-refactorer → улучшение качества кода
     ↓ Gate: тесты ДОЛЖНЫ остаться зелёными
 Phase 4 (CODE REVIEW): tdd-code-reviewer → проверка качества
-    ↓ Gate: нет critical/major issues (auto-fix через tdd-implementer/tdd-refactorer)
+    ↓ Gate: нет critical/major issues (fix-routing через main orchestrator по FixRequest[], max 3 цикла)
 Phase 5 (ARCHITECTURE REVIEW): tdd-architect-reviewer → проверка интеграции
-    ↓ Gate: код интегрирован в проект (на последнем subtask — Full Task Review)
+    ↓ Gate: код интегрирован в проект (fix-routing через main orchestrator, max 3 цикла; на последнем subtask — Full Task Review)
 Phase 6 (DOCUMENTATION): tdd-documenter → сохранение в task-master + CLAUDE.md
     ↓
 DONE → переход к следующему subtask
@@ -31,22 +31,75 @@ DONE → переход к следующему subtask
 
 | Агент | Модель | Роль | Tools |
 |-------|--------|------|-------|
-| tdd-architect-reviewer | opus | Архитектурный анализ, Full Task Review | Read, Glob, Grep, Bash, Task, task-master MCP |
+| tdd-architect-reviewer | opus | Архитектурный анализ, Full Task Review; **read-only, возвращает IntegrationVerdict + FixRequest[]** | Read, Glob, Grep, Bash, task-master MCP |
 | tdd-test-writer | sonnet | Написание failing тестов | Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion |
 | tdd-implementer | sonnet | Минимальная реализация | Read, Glob, Grep, Write, Edit, Bash |
-| tdd-code-reviewer | sonnet | Code quality review | Read, Glob, Grep, Bash, Task |
+| tdd-code-reviewer | sonnet | Code quality review; **полностью read-only, возвращает FixRequest[]** | Read, Glob, Grep, Bash |
 | tdd-refactorer | sonnet | Рефакторинг кода | Read, Glob, Grep, Write, Edit, Bash |
-| tdd-documenter | haiku | Документация | Read, Glob, Grep, Write, Edit, Bash, Task, task-master MCP |
+| tdd-documenter | haiku | Документация | Read, Glob, Grep, Write, Edit, Bash, task-master MCP |
 
 **TDD Guard — техническое enforcement:**
 
-Хук `prevent-test-edit.ts` (PreToolUse) обеспечивает жёсткое ограничение:
+Хук `prevent-test-edit.ts` (PreToolUse + SubagentStop) обеспечивает жёсткое ограничение:
 - Отслеживает активного субагента через `.claude/.guard-state.json` (runtime-only, gitignored)
 - При вызове Task tool — записывает имя субагента в state
 - При вызове Write/Edit — проверяет, модифицируется ли файл в `tests/**`
 - Разрешает модификацию тестов ТОЛЬКО для `tdd-test-writer` и `main` агента
 - GREEN/REFACTOR/CODE REVIEW/ARCHITECTURE/DOCUMENTATION фазы — тесты read-only
-- При SubagentStop — сбрасывает state обратно в `main`
+- **При SubagentStop — сбрасывает state обратно в `main`** (SubagentStop hook добавлен в settings.json)
+- **Защита jest.config файлов**: при попытке редактирования `jest.*.config.[jt]s` вне RED/main — возвращает `'ask'` (предупреждение, не hard block)
+- **Fail-closed**: при ошибках парсинга хук возвращает `'ask'` вместо `'allow'`
+
+**FixRequest-паттерн и fix-routing:**
+
+Центральное архитектурное изменение MR #1: ревьюеры не делегируют фиксы напрямую, а возвращают структурированный `FixRequest[]`. Main orchestrator (skill.md) выполняет маршрутизацию.
+
+```
+FixRequest формат:
+- file: src/services/PaymentService.ts
+- location: line 42
+- severity: critical | major | minor
+- category: type-safety | error-handling | security | clean-code | style | structure | duplication
+- description: Function uses 'any' return type
+- proposedFix: Define PaymentResult interface, set return type to Promise<PaymentResult>
+- verificationCommand: npm run test:unit -- tests/unit/payment.test.ts
+- routeTo: implementer | refactorer
+```
+
+Fix-routing в skill.md:
+1. Парсит `FixRequest[]` из output ревьюера
+2. Группирует по `routeTo`: `implementer` (type/logic/security) vs `refactorer` (structure/duplication/SRP)
+3. Вызывает субагент с инструкциями по фиксу
+4. После фикса — прогоняет тесты
+5. Повторно вызывает ревьюера (re-review)
+6. Максимум 3 цикла; при превышении — эскалация к пользователю
+
+Architecture FixRequests всегда маршрутизируются к `implementer`.
+
+**Phase Packet handoff-контракты:**
+
+Каждый агент возвращает стандартизированный Phase Packet, который main orchestrator парсит для принятия решений о переходе к следующей фазе:
+
+| Фаза | Ключевые поля Phase Packet |
+|------|---------------------------|
+| RED | `Phase, AgentTaskStatus, TestRunStatus` (должен быть `failed`), `Test file, Test command, Changed files` |
+| GREEN | `Phase, Status` (`passed`), `Test file, Test command, Changed files, Diff inventory` |
+| REFACTOR | `Phase, Status, Test file, Test command, Changed files, Preserved Invariants` |
+| CODE_REVIEW | `Phase, Status` (`passed\|needs-fix`), `Files reviewed, FixRequest` (`none\|array`) |
+| ARCHITECTURE | `Phase, Status` (`passed\|needs-fix\|integration-subtask-created`), `IntegrationVerdict, FixRequest` |
+| DOCUMENTATION | `Phase, Status, Modules documented, Task-master update` |
+
+Примечание: в RED-фазе `AgentTaskStatus` и `TestRunStatus` — два разных поля (split в коммите f249a3f). `TestRunStatus` всегда `failed` как gate-условие.
+
+**Self-Verification Checklists:**
+
+Все 6 агентов выполняют обязательный Self-Verification Checklist перед возвратом результата:
+- **tdd-test-writer**: файл существует и синтаксически корректен; тест падает с assertion error (не syntax/import); существующие тесты не затронуты
+- **tdd-implementer**: тест проходит; файлы тестов не изменены; реализация минимальна; TypeScript компилируется
+- **tdd-refactorer**: baseline green → changes → still green; нет новых behaviors; `Preserved Invariants` точен
+- **tdd-code-reviewer**: все файлы прочитаны; тесты зелёные (excerpt); FixRequest поля полны; фиксы не требуют изменения тест-ассертов
+- **tdd-architect-reviewer**: task-master контекст получен; grep-проверки выполнены; Full Task Review при last subtask; FixRequest поля полны
+- **tdd-documenter**: task-master update сохранён; все файлы упомянуты; CLAUDE.md ссылки существуют; root CLAUDE.md обновлён при last subtask
 
 **Автоактивация TDD Skill:**
 
@@ -59,7 +112,7 @@ DONE → переход к следующему subtask
 - Основной скилл `.claude/skills/tdd-integration/skill.md` оркестрирует весь цикл
 - 48+ команд в `.claude/commands/tm/` для управления задачами
 - Контекст parent task передаётся через все 6 фаз для subtask'ов
-- На последнем subtask — tdd-architect-reviewer выполняет Full Task Review всех файлов
+- На последнем subtask — tdd-architect-reviewer выполняет Full Task Review (алгоритм вынесен в forms/)
 - При обнаружении orphaned code — автоматическое создание integration subtask
 - tdd-documenter сохраняет implementation details в task-master и создаёт module CLAUDE.md
 
@@ -69,19 +122,23 @@ DONE → переход к следующему subtask
 - Отдельные permissions для каждого субагента через `Task(tdd-*:*)`
 - Deny list: секреты (.env), destructive git/docker операции
 - Ask list: git push, rebase, merge, package-lock.json
+- **SubagentStop hook добавлен** рядом с PreToolUse (тот же скрипт `prevent-test-edit.ts`)
 
 **Ключевые файлы репозитория:**
 
 | Файл | Назначение |
 |------|-----------|
 | `.claude/agents/tdd-*.md` | 6 определений субагентов |
-| `.claude/skills/tdd-integration/skill.md` | Основной TDD skill (оркестратор) |
-| `.claude/hooks/prevent-test-edit.ts` | TDD Guard (PreToolUse hook) |
+| `.claude/skills/tdd-integration/skill.md` | Основной TDD skill (оркестратор, fix-routing) |
+| `.claude/hooks/prevent-test-edit.ts` | TDD Guard (PreToolUse + SubagentStop hook) |
 | `.claude/hooks/user-prompt-skill-eval.ts` | Автоактивация skill (UserPromptSubmit hook) |
 | `.claude/settings.json` | Permissions, hooks config, env |
 | `.claude/utils/detect-test-type.md` | Алгоритм автоопределения типа тестов |
 | `.claude/commands/tm/*.md` | 48+ Task Master команд |
 | `.claude/commands/tdd-integration.md` | Ручной триггер TDD цикла |
+| `.claude/skills/tdd-integration/forms/architect-full-task-review.md` | Подробный алгоритм Full Task Review |
+| `.claude/skills/tdd-integration/forms/code-review-checklist.md` | Расширенный checklist для code review |
+| `.claude/skills/tdd-integration/forms/documenter-templates.md` | Шаблоны документации |
 | `CLAUDE.md` | Философия TDD, модульная документация |
 
 ## Task Master AI интеграция и направленность
@@ -150,9 +207,12 @@ DONE → переход к следующему subtask
 TDD-практики для agentic workflows:
 - red-green-refactor как формальный state machine
 - specification-as-code (behavioral tests, contracts, fitness functions)
-- feedback loops и проверка артефактов после каждого шага
-- self-verification/error correction в фазах RED/GREEN/REFACTOR
+- feedback loops и проверка артефактов после каждого шага *(частично реализовано: Phase Packets + fix-routing loops; исследовать надёжность парсинга LLM-output)*
+- self-verification/error correction в фазах RED/GREEN/REFACTOR *(реализовано: Self-Verification Checklists во всех 6 агентах; исследовать: что происходит, когда checklist пропускает ошибку?)*
 - incremental progress и artifact management в long-running сессиях
+- **[НОВОЕ]** эффективность FixRequest routing: корректность routeTo `implementer` vs `refactorer`, предотвращение неверной маршрутизации
+- **[НОВОЕ]** оптимальный лимит циклов fix-routing (текущий: 3) — обоснован ли, нужна ли адаптивная стратегия?
+- **[НОВОЕ]** каскадные сбои между фазами (failure propagation) — как Phase Packet gate failures влияют на весь цикл
 
 ## Ссылки по теме направления
 
@@ -163,8 +223,10 @@ TDD-практики для agentic workflows:
 
 ## Важные фокусные вопросы для подисследования
 
-1. Какие TDD-ритуалы для AI-агентов дают наименьший риск обхода RED/GREEN gates?
-2. Какие verification checkpoints обязательны перед переходом между фазами?
-3. Как формализовать test intent, чтобы implementer не «угадывал» требования?
-4. Какие anti-patterns чаще всего ломают TDD в multi-agent workflow и как их блокировать?
-5. Какие артефакты (trace, decisions, failing evidence) нужно сохранять после каждой фазы?
+1. Какие TDD-ритуалы для AI-агентов дают наименьший риск обхода RED/GREEN gates? *(SubagentStop hook и jest.config protection добавлены; нужна валидация: насколько устойчивы к новым векторам обхода?)*
+2. Какие verification checkpoints обязательны перед переходом между фазами? *(частично решён: Self-Verification Checklists добавлены; исследовать: достаточно ли этих checkpoints или нужны внешние валидаторы?)*
+3. Как формализовать test intent, чтобы implementer не «угадывал» требования? *(частично решён: Phase Packets с `Test command`, `Failure Excerpt`, `What tests verify`; исследовать: best practices для передачи семантики теста)*
+4. Какие anti-patterns чаще всего ломают TDD в multi-agent workflow и как их блокировать? *(найден delegation anti-pattern — субагент не может вызывать субагент; что ещё? Какие паттерны обхода guard наиболее вероятны?)*
+5. Какие артефакты (trace, decisions, failing evidence) нужно сохранять после каждой фазы? *(решён: Phase Packets определяют набор; исследовать: достаточен ли текущий набор полей для диагностики регрессий?)*
+6. **[НОВЫЙ]** Как измерять точность FixRequest routing? Какие метрики качества TDD-цикла собирать для непрерывного улучшения harness?
+7. **[НОВЫЙ]** Какие практики защищают от «галлюцинаций» в Phase Packets — ситуации, когда агент возвращает `Status: passed`, но тесты фактически не прошли?
