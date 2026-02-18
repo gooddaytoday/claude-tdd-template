@@ -114,7 +114,7 @@ Before returning output, verify:
 
 ## Output Contract
 
-```
+````
 ## RED Phase Complete
 
 **Phase**: RED
@@ -139,4 +139,4 @@ Before returning output, verify:
 - Test 2: [description]
 
 **Notes**: [any observations about edge cases or ambiguities]
-```
+````

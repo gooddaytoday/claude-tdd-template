@@ -77,7 +77,7 @@ Before returning output, verify:
 
 ### If Changes Made:
 
-```
+````
 ## REFACTOR Phase Complete
 
 **Phase**: REFACTOR
@@ -102,11 +102,11 @@ Before returning output, verify:
 ```
 
 **Notes**: [any observations about remaining technical debt or future refactoring opportunities]
-```
+````
 
 ### If No Changes:
 
-```
+````
 ## REFACTOR Phase Complete
 
 **Phase**: REFACTOR
@@ -123,4 +123,4 @@ Before returning output, verify:
 - All module interfaces, exports, and data structures unchanged from GREEN phase
 
 **Notes**: [any minor observations logged for code reviewer]
-```
+````
