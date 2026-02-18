@@ -26,11 +26,18 @@ interface GuardState {
 }
 
 interface HookOutput {
+  // Used by PreToolUse hooks
   hookSpecificOutput?: {
     hookEventName: string;
     permissionDecision?: 'allow' | 'deny' | 'ask';
     permissionDecisionReason?: string;
   };
+  // Used by Stop/SubagentStop hooks: "block" prevents stopping; omit to allow
+  decision?: 'block';
+  reason?: string;
+  // Universal fields
+  continue?: boolean;
+  stopReason?: string;
 }
 
 const ALLOWED_TEST_WRITERS = ['tdd-test-writer', 'main'];
@@ -38,6 +45,8 @@ const STATE_FILE = '.claude/.guard-state.json';
 // Match paths that contain tests/ as a directory component
 // Matches: tests/, ./tests/, ../tests/, /absolute/path/tests/, tests\unit\, etc.
 const PROTECTED_PATHS = /(?:^|[\\/])tests[\\/]/;
+// Match jest config files that could be used to bypass test enforcement
+const JEST_CONFIG_PATHS = /(?:^|[\\/])jest(?:\.[^/\\]*)?\.config\.[jt]s$/;
 
 function getProjectRoot(): string {
   // Try to find .claude directory
@@ -86,25 +95,27 @@ function extractSubagentName(toolInput: Record<string, unknown>): string | null 
   return name || null;
 }
 
-function isTestFile(filePath: string): boolean {
-  if (!filePath) return false;
-
+function normalizePath(filePath: string): string {
   // Normalize path separators (both / and \) to forward slashes
   const normalized = filePath.replace(/\\/g, '/');
-
   // Remove leading ./ or ../ or multiple ../ prefixes
-  // Examples: ./tests/file.ts → tests/file.ts, ../../tests/file.ts → tests/file.ts
   const cleaned = normalized.replace(/^(?:\.+\/)+/, '');
-
   // Remove leading absolute path separators
-  // Examples: /tests/file.ts → tests/file.ts, //tests/file.ts → tests/file.ts
-  const withoutLeadingSlash = cleaned.replace(/^\/+/, '');
+  return cleaned.replace(/^\/+/, '');
+}
 
-  // Check if path contains tests/ as a directory component
-  // Regex: (?:^|[\\/])tests[\\/]  matches:
-  // - tests/ at start: "tests/unit/file.ts"
-  // - tests/ after separator: "src/tests/file.ts" or "src\tests\file.ts"
+function isTestFile(filePath: string): boolean {
+  if (!filePath) return false;
+  const normalized = filePath.replace(/\\/g, '/');
+  const withoutLeadingSlash = normalizePath(filePath);
   return PROTECTED_PATHS.test(withoutLeadingSlash) || PROTECTED_PATHS.test(normalized);
+}
+
+function isJestConfigFile(filePath: string): boolean {
+  if (!filePath) return false;
+  const normalized = filePath.replace(/\\/g, '/');
+  const withoutLeadingSlash = normalizePath(filePath);
+  return JEST_CONFIG_PATHS.test(withoutLeadingSlash) || JEST_CONFIG_PATHS.test(normalized);
 }
 
 function handleTaskToolUse(toolInput: Record<string, unknown>): HookOutput {
@@ -128,38 +139,55 @@ function handleTaskToolUse(toolInput: Record<string, unknown>): HookOutput {
 function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): HookOutput {
   const filePath = (toolInput.file_path || toolInput.path) as string | undefined;
 
-  if (!filePath || !isTestFile(filePath)) {
-    // Not a test file, allow
-    return {
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'allow',
-      },
-    };
+  if (!filePath) {
+    return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } };
   }
 
-  // This is a test file - check if current subagent is allowed to edit it
   const state = readState();
   const currentSubagent = state.activeSubagent;
 
-  if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
-    // BLOCK: Only tdd-test-writer (or main agent) can edit test files
-    return {
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'deny',
-        permissionDecisionReason: `❌ TDD Guard: Cannot modify test files in GREEN/REFACTOR phases.\n\nFile: ${filePath}\nCurrent subagent: ${currentSubagent}\n\nOnly tdd-test-writer can modify tests/ during RED phase.\nIf you need to modify tests, ensure you're using the tdd-test-writer subagent or RED phase of TDD cycle.\n\nSee .cursor/rules/claude-tdd.md for TDD workflow details.`,
-      },
-    };
+  // Check if this is a test file
+  if (isTestFile(filePath)) {
+    if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: `❌ TDD Guard: Cannot modify test files in GREEN/REFACTOR phases.\n\nFile: ${filePath}\nCurrent subagent: ${currentSubagent}\n\nOnly tdd-test-writer can modify tests/ during RED phase.\nIf you need to modify tests, ensure you're using the tdd-test-writer subagent or RED phase of TDD cycle.\n\nSee .claude/skills/tdd-integration/skill.md for TDD workflow details.`,
+        },
+      };
+    }
+    return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } };
   }
 
-  // tdd-test-writer is allowed to edit test files
-  return {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'allow',
-    },
-  };
+  // Check if this is a jest config file (protects against indirect test bypass)
+  if (isJestConfigFile(filePath)) {
+    if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'ask',
+          permissionDecisionReason: `⚠️ TDD Guard: Modifying Jest configuration outside RED phase.\n\nFile: ${filePath}\nCurrent subagent: ${currentSubagent}\n\nJest config changes can indirectly affect test behavior. This is only expected during RED phase (tdd-test-writer).\n\nProceed only if this change is intentional and unrelated to current TDD cycle.`,
+        },
+      };
+    }
+  }
+
+  // Not a protected file, allow
+  return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } };
+}
+
+function handleSubagentStop(): HookOutput {
+  // Reset activeSubagent to 'main' when any subagent finishes
+  writeState({
+    activeSubagent: 'main',
+    lastUpdated: new Date().toISOString(),
+  });
+
+  // SubagentStop uses top-level "decision: block" to prevent stopping.
+  // Omitting "decision" (returning {}) signals "allow" — let the subagent stop normally.
+  // Do NOT use hookSpecificOutput.permissionDecision — that is PreToolUse-only format.
+  return {};
 }
 
 function main(): void {
@@ -167,13 +195,16 @@ function main(): void {
     // Read hook input from stdin
     const inputData = JSON.parse(readFileSync(0, 'utf-8')) as HookInput;
 
+    const hookEventName = inputData.hook_event_name || '';
     const toolName = inputData.tool_name || '';
     const toolInput = inputData.tool_input || {};
 
     let result: HookOutput;
 
-    // Route based on tool type
-    if (toolName === 'Task') {
+    // Reset guard state when any subagent completes
+    if (hookEventName === 'SubagentStop') {
+      result = handleSubagentStop();
+    } else if (toolName === 'Task') {
       // Track which subagent is being invoked
       result = handleTaskToolUse(toolInput);
     } else if (toolName === 'Write' || toolName === 'Edit') {
@@ -193,12 +224,13 @@ function main(): void {
     stdout.write(JSON.stringify(result));
     process.exit(0);
   } catch (error) {
-    // On parse error or unexpected failure, allow action
-    // (fail open rather than blocking legitimate operations)
+    // On parse error or unexpected failure, ask user rather than blindly allowing
+    // This prevents a broken hook from silently bypassing TDD guard protections
     const fallback = {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
-        permissionDecision: 'allow',
+        permissionDecision: 'ask',
+        permissionDecisionReason: '⚠️ TDD Guard: Hook encountered an unexpected error. Please verify this action is safe before proceeding.',
       },
     };
     stdout.write(JSON.stringify(fallback));
