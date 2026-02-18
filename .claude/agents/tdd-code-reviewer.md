@@ -27,7 +27,12 @@ Expect from caller:
 
 ## Process
 
-1. **Identify changed files** — prefer list from caller; fallback: `find src -type f -name "*.ts" -mmin -30`
+1. **Identify changed files** — the caller MUST supply an explicit file list. If no list is provided, stop immediately and return:
+   ```
+   ## CODE REVIEW Phase Error
+   **Status**: error
+   **Reason**: File list not provided by caller. Re-invoke with an explicit list of modified files (from GREEN/REFACTOR phases). Do not guess using mtime or glob fallbacks.
+   ```
 2. **Read each modified file** using Read tool
 3. **Run tests** to confirm green state: `npm run test:unit && npm run test:integration` (or targeted command)
 4. **Review each file** against the checklist below
