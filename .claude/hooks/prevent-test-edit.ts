@@ -105,9 +105,10 @@ function readState(): GuardState {
       const content = readFileSync(statePath, 'utf-8');
       const state = JSON.parse(content) as GuardState;
 
-      // Check TTL: stale state is treated as unknown
-      const age = Date.now() - new Date(state.lastUpdated).getTime();
-      if (age > STATE_TTL_MS) {
+      // Check TTL: stale, missing, or unparsable timestamps are treated as unknown (fail-closed)
+      const parsedTime = new Date(state.lastUpdated).getTime();
+      const age = Date.now() - parsedTime;
+      if (Number.isNaN(age) || age < 0 || age > STATE_TTL_MS) {
         return { activeSubagent: 'unknown', lastUpdated: new Date().toISOString() };
       }
 
