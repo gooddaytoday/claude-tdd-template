@@ -81,6 +81,16 @@ const BASH_WRITE_JEST_PATTERNS: RegExp[] = [
   /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\s*(?:''|"")?|--in-place(?:=(?:''|"")?)?\s+).*jest(?:\.[^/\\'"\s]*)?\.config\.[jt]s/,
 ];
 
+// Patterns for Bash commands writing to TDD enforcement files
+const BASH_WRITE_ENFORCEMENT_PATTERNS: RegExp[] = [
+  /(?:>>?|tee(?:\s+-a)?)\s+['"]?[^\s'"]*\.claude[\\/](?:hooks|skills)[\\/]/,
+  /(?:>>?|tee(?:\s+-a)?)\s+['"]?[^\s'"]*\.claude[\\/]settings\.json/,
+  /\b(?:cp|mv)\b.*\.claude[\\/](?:hooks|skills)[\\/]/,
+  /\b(?:cp|mv)\b.*\.claude[\\/]settings\.json/,
+  /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\s*(?:''|"")?|--in-place(?:=(?:''|"")?)?\s+).*\.claude[\\/](?:hooks|skills)[\\/]/,
+  /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\s*(?:''|"")?|--in-place(?:=(?:''|"")?)?\s+).*\.claude[\\/]settings\.json/,
+];
+
 // Semantic test-disabling patterns to detect inside test file content
 const SKIP_PATTERNS = /\b(?:describe|it|test)\.(?:skip|only)\b|\bx(?:describe|it|test)\b|\bif\s*\(\s*false\s*\)/;
 
@@ -175,6 +185,10 @@ function bashCommandWritesToJestConfig(command: string): boolean {
   return BASH_WRITE_JEST_PATTERNS.some(pattern => pattern.test(command));
 }
 
+function bashCommandWritesToEnforcementFiles(command: string): boolean {
+  return BASH_WRITE_ENFORCEMENT_PATTERNS.some(pattern => pattern.test(command));
+}
+
 // A1: Handle Bash tool — detect write-capable commands targeting tests/ or jest configs
 function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
   const command = (toolInput.command || toolInput.cmd || '') as string;
@@ -205,6 +219,18 @@ function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
           hookEventName: 'PreToolUse',
           permissionDecision: 'ask',
           permissionDecisionReason: `⚠️ TDD Guard (Bash): Modifying Jest configuration via shell command outside RED phase.\n\nCommand: ${command.slice(0, 200)}\nCurrent subagent: ${currentSubagent}\n\nJest config changes can indirectly affect which tests run. Proceed only if intentional.`,
+        },
+      };
+    }
+  }
+
+  if (bashCommandWritesToEnforcementFiles(command)) {
+    if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: `❌ TDD Guard (Bash): Cannot modify TDD enforcement files via shell commands outside allowed phases.\n\nCommand: ${command.slice(0, 200)}\nCurrent subagent: ${currentSubagent}\n\nShell-based modifications to .claude/hooks/, .claude/skills/, and .claude/settings.json are blocked for active GREEN/REFACTOR/unknown contexts to prevent guard tampering.`,
         },
       };
     }
