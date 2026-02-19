@@ -225,12 +225,12 @@ function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
   }
 
   if (bashCommandWritesToEnforcementFiles(command)) {
-    if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
+    if (currentSubagent !== 'main') {
       return {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
-          permissionDecision: 'deny',
-          permissionDecisionReason: `❌ TDD Guard (Bash): Cannot modify TDD enforcement files via shell commands outside allowed phases.\n\nCommand: ${command.slice(0, 200)}\nCurrent subagent: ${currentSubagent}\n\nShell-based modifications to .claude/hooks/, .claude/skills/, and .claude/settings.json are blocked for active GREEN/REFACTOR/unknown contexts to prevent guard tampering.`,
+          permissionDecision: 'ask',
+          permissionDecisionReason: `⚠️ TDD Guard (Bash): Modifying TDD enforcement files via shell command during an active subagent cycle.\n\nCommand: ${command.slice(0, 200)}\nCurrent subagent: ${currentSubagent}\n\nChanges to .claude/hooks/, .claude/skills/, or .claude/settings.json during TDD cycles risk disabling guard protections. This should only happen in a maintenance context, not during a TDD cycle.`,
         },
       };
     }
