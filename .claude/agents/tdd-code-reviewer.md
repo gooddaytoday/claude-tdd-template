@@ -95,7 +95,7 @@ Each issue must be reported as a FixRequest block:
 ```
 
 **routeTo decision rule — ask yourself:**
-> "Will the proposed fix change any observable/external behavior (public API, types, error handling, security)?"
+> "Will the proposed fix change any observable/external behavior (public API, types, error handling, security, or logic)?"
 > - **Yes** → `routeTo: implementer`
 > - **No** (structure only: duplication, naming, SRP, extract private function) → `routeTo: refactorer`
 
