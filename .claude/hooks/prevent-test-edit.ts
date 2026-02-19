@@ -14,7 +14,6 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { stdout } from 'node:process';
-import { randomUUID } from 'node:crypto';
 
 interface HookInput {
   hook_event_name: string;
