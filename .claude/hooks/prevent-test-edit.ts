@@ -82,7 +82,7 @@ const BASH_WRITE_JEST_PATTERNS: RegExp[] = [
 ];
 
 // Semantic test-disabling patterns to detect inside test file content
-const SKIP_PATTERNS = /\.skip\b|\.only\b|\bx(?:describe|it|test)\b|\bif\s*\(\s*false\s*\)/;
+const SKIP_PATTERNS = /\b(?:describe|it|test)\.(?:skip|only)\b|\bx(?:describe|it|test)\b|\bif\s*\(\s*false\s*\)/;
 
 function getProjectRoot(): string {
   let cwd = process.cwd();
