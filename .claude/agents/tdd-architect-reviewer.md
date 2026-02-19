@@ -39,7 +39,18 @@ Determine:
 - What was the subtask supposed to implement?
 - Have previous subtasks created components needing integration?
 
-### Step 2: Analyze Structure of Modified Files
+### Step 2: Verify Upstream Phase Integrity
+
+Before analyzing files, confirm that upstream phases completed correctly:
+- Check the `Upstream phases` section in the delegation prompt
+- If `RED: TestRunStatus` is not `failed (orchestrator-verified)`: flag as process violation in Notes
+- If `GREEN: VerifiedTestStatus` is not `passed (orchestrator-verified)`: flag as process violation in Notes
+- If `REFACTOR: VerifiedTestStatus` is not `passed (orchestrator-verified)`: flag as process violation in Notes
+- If `CODE_REVIEW: Status` is not `passed`: this reviewer should not have been invoked — flag as process violation in Notes
+
+Process violations do NOT block your review, but must be noted in the output.
+
+### Step 3: Analyze Structure of Modified Files
 
 For each modified file:
 1. Read the file
@@ -58,7 +69,7 @@ src/
   └── config/      # Configuration loading
 ```
 
-### Step 3: Verify Integration
+### Step 4: Verify Integration
 
 Check each new component is connected:
 
@@ -80,7 +91,7 @@ grep -r "import.*ModelName" src/services/
 | Model | Imported in ≥1 service |
 | Utility | Imported somewhere (or documented as planned future use) |
 
-### Step 4: Full Task Review (Last Subtask Only)
+### Step 5: Full Task Review (Last Subtask Only)
 
 If this is the last top-level subtask (format X.Y, position = last in array):
 
@@ -92,7 +103,7 @@ Summary of what to do:
 3. Build integration matrix: Component → Type → Used By → Status
 4. If any component is ORPHANED → create integration subtask via `mcp__task_master_ai__add_subtask`
 
-### Step 5: Build Output
+### Step 6: Build Output
 
 Compile IntegrationVerdict and FixRequest[] (see Output Contract below).
 
@@ -100,6 +111,7 @@ Compile IntegrationVerdict and FixRequest[] (see Output Contract below).
 
 ```
 ### FixRequest
+- id: FR-1                          (sequential, used for dependsOn references)
 - file: src/handlers/paymentHandler.ts
 - location: line 1 (missing import)
 - severity: critical | major
@@ -108,6 +120,9 @@ Compile IntegrationVerdict and FixRequest[] (see Output Contract below).
 - proposedFix: Add import and usage in paymentHandler.ts
 - verificationCommand: grep -r "import.*PaymentService" src/handlers/
 - routeTo: implementer
+- confidence: high | medium | low
+- rationale: [1-2 sentences explaining the architectural issue and why implementer must fix it]
+- dependsOn: none | FR-N            (ID of FixRequest that must be resolved first)
 ```
 
 **routeTo:** always `implementer` for architecture fixes (moving files, adding imports, restructuring).
@@ -116,10 +131,11 @@ Compile IntegrationVerdict and FixRequest[] (see Output Contract below).
 
 Before returning output, verify:
 - [ ] Retrieved both current subtask AND parent task from task-master
+- [ ] Checked upstream phase statuses (RED/GREEN/REFACTOR/CODE_REVIEW) and noted any violations
 - [ ] Read every file in the modified list
 - [ ] Ran grep checks for integration of each new component
 - [ ] If last subtask: performed Full Task Review (or confirmed not applicable)
-- [ ] Each FixRequest has all required fields
+- [ ] Each FixRequest has all required fields including `id`, `confidence`, `rationale`, `dependsOn`
 - [ ] Integration subtask created if orphaned code found on last subtask
 
 ## Output Contract

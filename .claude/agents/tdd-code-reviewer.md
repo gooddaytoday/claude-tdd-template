@@ -80,6 +80,7 @@ Each issue must be reported as a FixRequest block:
 
 ```
 ### FixRequest
+- id: FR-1                          (sequential, used for dependsOn references)
 - file: src/services/PaymentService.ts
 - location: line 42
 - severity: critical | major | minor
@@ -88,20 +89,32 @@ Each issue must be reported as a FixRequest block:
 - proposedFix: Define PaymentResult interface, set return type to Promise<PaymentResult>
 - verificationCommand: npm run test:unit -- tests/unit/payment.test.ts
 - routeTo: implementer | refactorer
+- confidence: high | medium | low
+- rationale: [1-2 sentences explaining why this routeTo was chosen]
+- dependsOn: none | FR-N            (ID of FixRequest that must be resolved first)
 ```
 
+**routeTo decision rule — ask yourself:**
+> "Will the proposed fix change any observable/external behavior (public API, types, error handling, security, or logic)?"
+> - **Yes** → `routeTo: implementer`
+> - **No** (structure only: duplication, naming, SRP, extract private function) → `routeTo: refactorer`
+
 **routeTo rules:**
-- `implementer` — type errors, missing error handling, security vulnerabilities, logic issues
-- `refactorer` — code duplication, SRP violations, naming, structural reorganization
+- `implementer` — type errors, missing error handling, security vulnerabilities, logic issues, any change to public API
+- `refactorer` — code duplication, SRP violations, naming, structural reorganization that preserves all external behavior
+
+**dependsOn usage:** If FR-2 requires types defined by FR-1 to be fixed first, set `dependsOn: FR-1`. The orchestrator will resolve dependencies before routing.
 
 ## Self-Verification Checklist
 
 Before returning output, verify:
 - [ ] All files from the modified list were actually read
 - [ ] Tests confirmed green (paste excerpt of passing output)
-- [ ] Each FixRequest has all required fields
-- [ ] Proposed fixes do not require changing test assertions
+- [ ] Each FixRequest has all required fields including `id`, `confidence`, `rationale`, `dependsOn`
+- [ ] Proposed fixes do not require changing test assertions (fixes must not break existing tests)
 - [ ] Minor issues are not marked as critical/major
+- [ ] `routeTo` decision was made using the observable-behavior rule (not by gut feeling)
+- [ ] `dependsOn` is set correctly for any fix that requires another fix to land first
 
 ## Output Contract
 

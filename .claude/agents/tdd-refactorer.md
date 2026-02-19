@@ -45,7 +45,10 @@ Expect from caller:
    c. If tests fail → revert that change immediately
    d. Log what was tried and why it failed
 5. Run final test confirmation after all changes
-6. Build `Preserved Invariants` list for architect-reviewer
+6. Build `Preserved Invariants` list for architect-reviewer:
+   - List SPECIFIC exports, function signatures, and public APIs that were NOT changed
+   - Example: `calculateTotal(items: Item[]): number — signature unchanged`
+   - Do NOT write generic phrases like "everything preserved" or "all APIs unchanged"
 7. Return Phase Packet
 
 ## Refactoring Checklist

@@ -43,10 +43,14 @@ DONE → переход к следующему subtask
 Хук `prevent-test-edit.ts` (PreToolUse) обеспечивает жёсткое ограничение:
 - Отслеживает активного субагента через `.claude/.guard-state.json` (runtime-only, gitignored)
 - При вызове Task tool — записывает имя субагента в state
-- При вызове Write/Edit — проверяет, модифицируется ли файл в `tests/**`
+- При вызове Write/Edit/MultiEdit — проверяет, модифицируется ли файл в `tests/**`
+- При вызове Bash — перехватывает shell-команды записи в tests/ (cp, mv, sed -i, echo >, tee)
 - Разрешает модификацию тестов ТОЛЬКО для `tdd-test-writer` и `main` агента
 - GREEN/REFACTOR/CODE REVIEW/ARCHITECTURE/DOCUMENTATION фазы — тесты read-only
 - При SubagentStop — сбрасывает state обратно в `main`
+- Fail-closed: неизвестное/устаревшее состояние (TTL 2 часа) = deny
+- Детектирует семантическое отключение тестов (.skip/.only/xdescribe/if(false))
+- Защищает enforcement файлы (.claude/hooks, .claude/skills, .claude/settings.json) во время TDD циклов
 
 **Автоактивация TDD Skill:**
 
@@ -149,10 +153,7 @@ DONE → переход к следующему subtask
 
 Интеграция skills/hooks/commands:
 - шаблоны skill-композиций для многофазных workflows
-- hook-based automation repetitive задач
 - slash command pipelines для ускорения цикла
-- переиспользуемые context patterns и capture типовых ошибок
-- баланс automation vs operator control
 
 ## Ссылки по теме направления
 
@@ -162,8 +163,6 @@ DONE → переход к следующему subtask
 
 ## Важные фокусные вопросы для подисследования
 
-1. Какие части TDD цикла нужно автоматизировать hooks, а какие оставить explicit?
-2. Как структурировать `tdd-integration` skill, чтобы упростить поддержку и расширение?
-3. Какие reusable templates для skills и slash commands дают лучший прирост скорости?
-4. Как организовать безопасную автоактивацию skill по пользовательскому запросу?
-5. Какие failure modes hooks встречаются чаще всего и как их детектировать заранее?
+1. Как структурировать `tdd-integration` skill, чтобы упростить поддержку и расширение?
+2. Какие reusable templates для skills и slash commands дают лучший прирост скорости?
+3. Как организовать безопасную автоактивацию skill по пользовательскому запросу?
