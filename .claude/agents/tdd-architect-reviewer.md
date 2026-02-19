@@ -45,6 +45,7 @@ Before analyzing files, confirm that upstream phases completed correctly:
 - Check the `Upstream phases` section in the delegation prompt
 - If `RED: TestRunStatus` is not `failed (orchestrator-verified)`: flag as process violation in Notes
 - If `GREEN: VerifiedTestStatus` is not `passed (orchestrator-verified)`: flag as process violation in Notes
+- If `REFACTOR: VerifiedTestStatus` is not `passed (orchestrator-verified)`: flag as process violation in Notes
 - If `CODE_REVIEW: Status` is not `passed`: this reviewer should not have been invoked — flag as process violation in Notes
 
 Process violations do NOT block your review, but must be noted in the output.
