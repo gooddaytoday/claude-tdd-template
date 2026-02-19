@@ -355,7 +355,7 @@ function main(): void {
     } else if (toolName === 'Bash') {
       // A1: Intercept Bash commands that could write to tests/
       result = handleBashCommand(toolInput);
-    } else if (toolName === 'Write' || toolName === 'Edit') {
+    } else if (toolName === 'Write' || toolName === 'Edit' || toolName === 'MultiEdit') {
       result = handleFileEdit(toolName, toolInput);
     } else {
       result = {
