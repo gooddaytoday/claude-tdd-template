@@ -4,13 +4,17 @@
  *
  * Enforces:
  * - Only tdd-test-writer can modify tests/**
- * - GREEN/REFACTOR phases cannot touch test files
- * - Tracks active subagent via state file
+ * - GREEN/REFACTOR phases cannot touch test files via Write, Edit, OR Bash
+ * - Fail-closed: unknown state = deny (not allow)
+ * - Detects semantic test disabling (.skip/.only patterns)
+ * - Protects enforcement files (.claude/hooks, .claude/skills, .claude/settings.json)
+ * - Tracks active subagent via state file with session_id and TTL
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { stdout, stderr } from 'node:process';
+import { stdout } from 'node:process';
+import { randomUUID } from 'node:crypto';
 
 interface HookInput {
   hook_event_name: string;
@@ -23,33 +27,65 @@ interface HookInput {
 interface GuardState {
   activeSubagent: string;
   lastUpdated: string;
+  sessionId?: string;
 }
 
 interface HookOutput {
-  // Used by PreToolUse hooks
   hookSpecificOutput?: {
     hookEventName: string;
     permissionDecision?: 'allow' | 'deny' | 'ask';
     permissionDecisionReason?: string;
   };
-  // Used by Stop/SubagentStop hooks: "block" prevents stopping; omit to allow
   decision?: 'block';
   reason?: string;
-  // Universal fields
   continue?: boolean;
   stopReason?: string;
 }
 
 const ALLOWED_TEST_WRITERS = ['tdd-test-writer', 'main'];
+
+// State file lives inside the project's .claude directory
 const STATE_FILE = '.claude/.guard-state.json';
+
+// State TTL: if older than 2 hours, treat as stale (unknown subagent)
+const STATE_TTL_MS = 2 * 60 * 60 * 1000;
+
 // Match paths that contain tests/ as a directory component
-// Matches: tests/, ./tests/, ../tests/, /absolute/path/tests/, tests\unit\, etc.
-const PROTECTED_PATHS = /(?:^|[\\/])tests[\\/]/;
-// Match jest config files that could be used to bypass test enforcement
+const PROTECTED_TEST_PATHS = /(?:^|[\\/])tests[\\/]/;
+
+// Match jest config files
 const JEST_CONFIG_PATHS = /(?:^|[\\/])jest(?:\.[^/\\]*)?\.config\.[jt]s$/;
 
+// Match enforcement files that should be protected during TDD cycles
+const ENFORCEMENT_PATHS = /(?:^|[\\/])\.claude[\\/](?:hooks|skills|settings\.json)/;
+
+// Patterns in Bash commands that could write to tests/ (write-capable shell operators/commands).
+// Checks if the command string contains a write operation targeting a tests/ path.
+// Uses simple substring-aware patterns (no ^ anchor inside nested groups).
+const BASH_WRITE_TEST_PATTERNS: RegExp[] = [
+  // Redirect operators (> or >>) writing to a path containing tests/
+  /(?:>>?|tee(?:\s+-a)?)\s+['"]?[^\s'"]*tests[\\/]/,
+  // cp/mv with a destination argument containing tests/
+  /\b(?:cp|mv)\b.*\btests[\\/]/,
+  // sed -i targeting a file in tests/
+  /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\s*(?:''|"")?|--in-place(?:=(?:''|"")?)?\s+).*tests[\\/]/,
+  // echo/printf piped or redirected to tests/
+  /\b(?:echo|printf)\b.*(?:>>?|tee\s)\s*['"]?[^\s'"]*tests[\\/]/,
+  // cat redirected to tests/
+  /\bcat\b.*(?:>>?)\s+['"]?[^\s'"]*tests[\\/]/,
+];
+
+// Patterns for Bash commands writing to jest config files
+const BASH_WRITE_JEST_PATTERNS: RegExp[] = [
+  /(?:>>?|tee(?:\s+-a)?)\s+['"]?[^\s'"]*jest(?:\.[^/\\'"\s]*)?\.config\.[jt]s/,
+  /\b(?:cp|mv)\b.*jest(?:\.[^/\\'"\s]*)?\.config\.[jt]s/,
+  /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\s*(?:''|"")?|--in-place(?:=(?:''|"")?)?\s+).*jest(?:\.[^/\\'"\s]*)?\.config\.[jt]s/,
+];
+
+// Semantic test-disabling patterns to detect inside test file content
+const SKIP_PATTERNS = /\b(?:\.skip|xdescribe|xit\b|xtest\b|test\.only\b|describe\.only\b|it\.only\b)\b|if\s*\(\s*false\s*\)/;
+
 function getProjectRoot(): string {
-  // Try to find .claude directory
   let cwd = process.cwd();
   for (let i = 0; i < 10; i++) {
     if (existsSync(join(cwd, '.claude'))) {
@@ -68,12 +104,21 @@ function readState(): GuardState {
   try {
     if (existsSync(statePath)) {
       const content = readFileSync(statePath, 'utf-8');
-      return JSON.parse(content);
+      const state = JSON.parse(content) as GuardState;
+
+      // Check TTL: stale state is treated as unknown
+      const age = Date.now() - new Date(state.lastUpdated).getTime();
+      if (age > STATE_TTL_MS) {
+        return { activeSubagent: 'unknown', lastUpdated: new Date().toISOString() };
+      }
+
+      return state;
     }
-  } catch (err) {
-    // Fallback to default state
+  } catch {
+    // Fall through to fail-closed default
   }
-  return { activeSubagent: 'main', lastUpdated: new Date().toISOString() };
+  // A2: fail-closed — unknown state blocks test modifications
+  return { activeSubagent: 'unknown', lastUpdated: new Date().toISOString() };
 }
 
 function writeState(state: GuardState): void {
@@ -81,26 +126,19 @@ function writeState(state: GuardState): void {
   const statePath = join(projectRoot, STATE_FILE);
   try {
     writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf-8');
-  } catch (err) {
-    // Silent fail - state tracking is best-effort
+  } catch {
+    // Silent fail - state tracking is best-effort on write
   }
 }
 
 function extractSubagentName(toolInput: Record<string, unknown>): string | null {
-  // When Task tool is called, tool_input has structure like:
-  // { "task_name": "tdd-implementer", "prompt": "..." }
-  // or in newer Claude Code versions:
-  // { "name": "tdd-implementer", "prompt": "..." }
   const name = (toolInput.task_name || toolInput.name) as string | undefined;
   return name || null;
 }
 
 function normalizePath(filePath: string): string {
-  // Normalize path separators (both / and \) to forward slashes
   const normalized = filePath.replace(/\\/g, '/');
-  // Remove leading ./ or ../ or multiple ../ prefixes
   const cleaned = normalized.replace(/^(?:\.+\/)+/, '');
-  // Remove leading absolute path separators
   return cleaned.replace(/^\/+/, '');
 }
 
@@ -108,7 +146,7 @@ function isTestFile(filePath: string): boolean {
   if (!filePath) return false;
   const normalized = filePath.replace(/\\/g, '/');
   const withoutLeadingSlash = normalizePath(filePath);
-  return PROTECTED_PATHS.test(withoutLeadingSlash) || PROTECTED_PATHS.test(normalized);
+  return PROTECTED_TEST_PATHS.test(withoutLeadingSlash) || PROTECTED_TEST_PATHS.test(normalized);
 }
 
 function isJestConfigFile(filePath: string): boolean {
@@ -118,24 +156,64 @@ function isJestConfigFile(filePath: string): boolean {
   return JEST_CONFIG_PATHS.test(withoutLeadingSlash) || JEST_CONFIG_PATHS.test(normalized);
 }
 
-function handleTaskToolUse(toolInput: Record<string, unknown>): HookOutput {
-  // Update state when a subagent is invoked
-  const subagentName = extractSubagentName(toolInput);
-  if (subagentName) {
-    writeState({
-      activeSubagent: subagentName,
-      lastUpdated: new Date().toISOString(),
-    });
-  }
-  // Always allow Task tool use - we just track state
-  return {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'allow',
-    },
-  };
+function isEnforcementFile(filePath: string): boolean {
+  if (!filePath) return false;
+  const normalized = filePath.replace(/\\/g, '/');
+  const withoutLeadingSlash = normalizePath(filePath);
+  return ENFORCEMENT_PATHS.test(withoutLeadingSlash) || ENFORCEMENT_PATHS.test(normalized);
 }
 
+function contentHasSkipPatterns(content: string): boolean {
+  return SKIP_PATTERNS.test(content);
+}
+
+function bashCommandWritesToTests(command: string): boolean {
+  return BASH_WRITE_TEST_PATTERNS.some(pattern => pattern.test(command));
+}
+
+function bashCommandWritesToJestConfig(command: string): boolean {
+  return BASH_WRITE_JEST_PATTERNS.some(pattern => pattern.test(command));
+}
+
+// A1: Handle Bash tool — detect write-capable commands targeting tests/ or jest configs
+function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
+  const command = (toolInput.command || toolInput.cmd || '') as string;
+
+  if (!command) {
+    return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } };
+  }
+
+  const state = readState();
+  const currentSubagent = state.activeSubagent;
+
+  if (bashCommandWritesToTests(command)) {
+    if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: `❌ TDD Guard (Bash): Cannot modify test files via shell commands in GREEN/REFACTOR phases.\n\nCommand: ${command.slice(0, 200)}\nCurrent subagent: ${currentSubagent}\n\nShell-based modifications to tests/ are blocked outside RED phase, just like Write/Edit.\nOnly tdd-test-writer can modify tests/ during RED phase.`,
+        },
+      };
+    }
+  }
+
+  if (bashCommandWritesToJestConfig(command)) {
+    if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'ask',
+          permissionDecisionReason: `⚠️ TDD Guard (Bash): Modifying Jest configuration via shell command outside RED phase.\n\nCommand: ${command.slice(0, 200)}\nCurrent subagent: ${currentSubagent}\n\nJest config changes can indirectly affect which tests run. Proceed only if intentional.`,
+        },
+      };
+    }
+  }
+
+  return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } };
+}
+
+// Handle Write/Edit tools with A2 (fail-closed), A3 (skip detection), A4 (enforcement protection)
 function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): HookOutput {
   const filePath = (toolInput.file_path || toolInput.path) as string | undefined;
 
@@ -146,7 +224,18 @@ function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): H
   const state = readState();
   const currentSubagent = state.activeSubagent;
 
-  // Check if this is a test file
+  // A4: Protect enforcement files during any TDD subagent cycle
+  if (isEnforcementFile(filePath) && currentSubagent !== 'main' && currentSubagent !== 'unknown') {
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'ask',
+        permissionDecisionReason: `⚠️ TDD Guard: Modifying TDD enforcement files during an active subagent cycle.\n\nFile: ${filePath}\nCurrent subagent: ${currentSubagent}\n\nChanges to .claude/hooks/, .claude/skills/, or .claude/settings.json during TDD cycles risk disabling guard protections. This should only happen in a maintenance context, not during a TDD cycle.`,
+      },
+    };
+  }
+
+  // A2: fail-closed — unknown state blocks test modifications
   if (isTestFile(filePath)) {
     if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
       return {
@@ -157,10 +246,23 @@ function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): H
         },
       };
     }
+
+    // A3: Detect semantic test-disabling patterns in content being written
+    const newContent = (toolInput.new_content || toolInput.content || '') as string;
+    if (newContent && contentHasSkipPatterns(newContent)) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'ask',
+          permissionDecisionReason: `⚠️ TDD Guard: Test file contains skip/only patterns that may disable tests.\n\nFile: ${filePath}\nDetected patterns: .skip, .only, xdescribe, xit, xtest, if(false), etc.\n\nThese patterns create "dead" tests that don't actually run. Ensure this is intentional (e.g., a temporarily skipped test with a clear reason).`,
+        },
+      };
+    }
+
     return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } };
   }
 
-  // Check if this is a jest config file (protects against indirect test bypass)
+  // Jest config protection
   if (isJestConfigFile(filePath)) {
     if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
       return {
@@ -173,26 +275,35 @@ function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): H
     }
   }
 
-  // Not a protected file, allow
   return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } };
 }
 
+function handleTaskToolUse(toolInput: Record<string, unknown>): HookOutput {
+  const subagentName = extractSubagentName(toolInput);
+  if (subagentName) {
+    writeState({
+      activeSubagent: subagentName,
+      lastUpdated: new Date().toISOString(),
+    });
+  }
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'allow',
+    },
+  };
+}
+
 function handleSubagentStop(): HookOutput {
-  // Reset activeSubagent to 'main' when any subagent finishes
   writeState({
     activeSubagent: 'main',
     lastUpdated: new Date().toISOString(),
   });
-
-  // SubagentStop uses top-level "decision: block" to prevent stopping.
-  // Omitting "decision" (returning {}) signals "allow" — let the subagent stop normally.
-  // Do NOT use hookSpecificOutput.permissionDecision — that is PreToolUse-only format.
   return {};
 }
 
 function main(): void {
   try {
-    // Read hook input from stdin
     const inputData = JSON.parse(readFileSync(0, 'utf-8')) as HookInput;
 
     const hookEventName = inputData.hook_event_name || '';
@@ -201,17 +312,16 @@ function main(): void {
 
     let result: HookOutput;
 
-    // Reset guard state when any subagent completes
     if (hookEventName === 'SubagentStop') {
       result = handleSubagentStop();
     } else if (toolName === 'Task') {
-      // Track which subagent is being invoked
       result = handleTaskToolUse(toolInput);
+    } else if (toolName === 'Bash') {
+      // A1: Intercept Bash commands that could write to tests/
+      result = handleBashCommand(toolInput);
     } else if (toolName === 'Write' || toolName === 'Edit') {
-      // Check if trying to modify test files
       result = handleFileEdit(toolName, toolInput);
     } else {
-      // Other tools - allow by default
       result = {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
@@ -220,12 +330,10 @@ function main(): void {
       };
     }
 
-    // Output JSON result with exit code 0
     stdout.write(JSON.stringify(result));
     process.exit(0);
-  } catch (error) {
-    // On parse error or unexpected failure, ask user rather than blindly allowing
-    // This prevents a broken hook from silently bypassing TDD guard protections
+  } catch {
+    // On unexpected failure, ask user rather than blindly allowing
     const fallback = {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',

@@ -109,6 +109,7 @@ Before returning output, verify:
 - [ ] Failure is an **assertion error** (e.g., `Expected: X, Received: undefined`) — NOT a syntax or import error
 - [ ] If failure is import/syntax error: fix the test so the module path is correct and the failure becomes semantic
 - [ ] Existing tests (if any) still pass after adding this test file
+- [ ] No `.skip`, `.only`, `xdescribe`, `xit`, `xtest`, `if(false)` patterns in the new test file
 
 **If failure is import error:** The implementation file doesn't exist yet — this is expected. Ensure your import path is correct so that once the file is created, the test will run properly. Re-run after creating a stub file if needed to confirm assertion-level failure.
 
@@ -138,6 +139,15 @@ Before returning output, verify:
 ### What tests verify
 - Test 1: [description of what behavior is checked]
 - Test 2: [description]
+
+### TestIntent
+- **Summary**: [what is tested in one sentence]
+- **Given**: [preconditions / initial state]
+- **When**: [action performed]
+- **Then**: [expected outcome]
+- **Contract surface**: [list of expected exports the implementation must provide, e.g. `export function calculateTotal(items: Item[]): number`]
+- **Non-goals**: [what is explicitly NOT required in this TDD cycle]
+- **Edge cases covered**: [list of boundary/edge scenarios tested]
 
 **Notes**: [any observations about edge cases or ambiguities]
 ````

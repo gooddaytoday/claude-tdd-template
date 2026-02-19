@@ -34,7 +34,16 @@ Expect from caller:
 - Test file path
 - Exact test command from RED phase (run THIS command, not full suite)
 - Feature context description
+- **TestIntent from RED Phase Packet** (mandatory when provided):
+  - `Contract surface`: the EXACT exports/functions/classes/types you must implement
+  - `Non-goals`: what you must NOT implement in this cycle
+  - `Summary/Given/When/Then`: the precise behavior specification
 - Task context (current subtask, parent task if applicable)
+
+**TestIntent usage rules:**
+- `Contract surface` defines the public API — implement exactly these signatures, nothing more
+- `Non-goals` are hard limits — do not implement anything listed there, even if it seems obvious
+- When TestIntent is provided, it takes precedence over any assumptions about the implementation
 
 ## Process
 
