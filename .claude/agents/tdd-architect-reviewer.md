@@ -109,7 +109,7 @@ Compile IntegrationVerdict and FixRequest[] (see Output Contract below).
 
 ## FixRequest Format
 
-```
+```text
 ### FixRequest
 - id: FR-1                          (sequential, used for dependsOn references)
 - file: src/handlers/paymentHandler.ts
