@@ -224,8 +224,8 @@ function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): H
   const state = readState();
   const currentSubagent = state.activeSubagent;
 
-  // A4: Protect enforcement files during any TDD subagent cycle
-  if (isEnforcementFile(filePath) && currentSubagent !== 'main' && currentSubagent !== 'unknown') {
+  // A4: Protect enforcement files during any TDD subagent cycle (including unknown/stale state)
+  if (isEnforcementFile(filePath) && currentSubagent !== 'main') {
     return {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
