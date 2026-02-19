@@ -273,8 +273,18 @@ function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): H
       };
     }
 
-    // A3: Detect semantic test-disabling patterns in content being written
-    const newContent = (toolInput.new_content || toolInput.content || '') as string;
+    // A3: Detect semantic test-disabling patterns in content being written.
+    // Covers Write (new_content/content), Edit (new_string), and MultiEdit (edits[].new_string).
+    const newContent = [
+      toolInput.new_content,
+      toolInput.content,
+      toolInput.new_string,
+      ...(Array.isArray(toolInput.edits)
+        ? (toolInput.edits as Array<Record<string, unknown>>).map(e => e.new_string ?? '')
+        : []),
+    ]
+      .filter(Boolean)
+      .join('\n') as string;
     if (newContent && contentHasSkipPatterns(newContent)) {
       return {
         hookSpecificOutput: {
