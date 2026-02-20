@@ -18,12 +18,13 @@ You are a read-only expert code reviewer for TypeScript/Node.js TDD projects. Yo
 - **Block on critical/major**: Mark Status as `needs-fix` if any critical/major issues found
 - **Log minor only**: Minor issues documented but do not block workflow
 
-## Inputs
+## Context Packet Input
 
-Expect from caller:
-- List of modified files (from GREEN/REFACTOR phases)
+Receive a Context Packet (see `.claude/skills/tdd-integration/schemas/context-packet.md`) containing:
+- List of modified files (combined from RED/GREEN/REFACTOR `Changed files`)
 - Test file path for context
 - Task context (current subtask ID, parent task if applicable)
+- Upstream phase statuses (for verification)
 
 ## Process
 
@@ -117,6 +118,8 @@ Before returning output, verify:
 - [ ] `dependsOn` is set correctly for any fix that requires another fix to land first
 
 ## Output Contract
+
+Output as Phase Packet per `.claude/skills/tdd-integration/schemas/phase-packet.md` (CODE_REVIEW extensions):
 
 ```
 ## CODE REVIEW Phase Complete

@@ -1,6 +1,6 @@
 ---
 name: tdd-integration
-description: Manually trigger TDD Integration workflow with Red-Green-Refactor-Review cycle (5 phases)
+description: Manually trigger TDD Integration workflow with Red-Green-Refactor-Review cycle (6 phases)
 ---
 
 # TDD Integration Command
@@ -149,17 +149,26 @@ When working on the **last subtask** of a first-level parent task (format X.Y), 
 
 **Scope**: Only applies to first-level subtasks (X.Y format). Nested subtasks (X.Y.Z) skip full task review.
 
+## Related Commands
+
+- `/tdd-full-review --task=<id>` — Run Full Task Review for last subtask (architecture + documentation only)
+
 ## Detailed Documentation
 
 For complete information about the workflow, test type detection algorithms, delegation examples, and usage rules, see:
 
-**📚 [.claude/skills/tdd-integration/skill.md](./.claude/skills/tdd-integration/skill.md)**
+**[.claude/skills/tdd-integration/skill.md](./.claude/skills/tdd-integration/skill.md)** — Main orchestrator (state machine + phase routing)
 
-Additional resources:
-- **Test type detection algorithm**: [.claude/utils/detect-test-type.md](./.claude/utils/detect-test-type.md)
+Modular architecture:
+- **Phases**: `.claude/skills/tdd-integration/phases/*.md` — Phase delegation details
+- **Schemas**: `.claude/skills/tdd-integration/schemas/*.md` — Phase Packet, Context Packet contracts
+- **Policies**: `.claude/skills/tdd-integration/policies/*.md` — Guard rules, auto-activation rules
+- **Forms**: `.claude/skills/tdd-integration/forms/*.md` — Review checklists, documentation templates
+- **Test type detection**: [.claude/utils/detect-test-type.md](./.claude/utils/detect-test-type.md)
 - **Subagents**:
   - [.claude/agents/tdd-test-writer.md](./.claude/agents/tdd-test-writer.md)
   - [.claude/agents/tdd-implementer.md](./.claude/agents/tdd-implementer.md)
   - [.claude/agents/tdd-refactorer.md](./.claude/agents/tdd-refactorer.md)
   - [.claude/agents/tdd-code-reviewer.md](./.claude/agents/tdd-code-reviewer.md)
   - [.claude/agents/tdd-architect-reviewer.md](./.claude/agents/tdd-architect-reviewer.md)
+  - [.claude/agents/tdd-documenter.md](./.claude/agents/tdd-documenter.md)

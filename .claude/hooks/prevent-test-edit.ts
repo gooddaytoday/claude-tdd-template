@@ -107,6 +107,9 @@ function getProjectRoot(): string {
   return process.cwd();
 }
 
+// Current session ID, set from hook input in main()
+let currentSessionId: string | undefined;
+
 function readState(): GuardState {
   const projectRoot = getProjectRoot();
   const statePath = join(projectRoot, STATE_FILE);
@@ -120,6 +123,11 @@ function readState(): GuardState {
       const age = Date.now() - parsedTime;
       if (Number.isNaN(age) || age < 0 || age > STATE_TTL_MS) {
         return { activeSubagent: 'unknown', lastUpdated: new Date().toISOString() };
+      }
+
+      // Session isolation: if state belongs to a different session, treat as 'main' (safe default)
+      if (currentSessionId && state.sessionId && state.sessionId !== currentSessionId) {
+        return { activeSubagent: 'main', lastUpdated: state.lastUpdated, sessionId: state.sessionId };
       }
 
       return state;
@@ -206,7 +214,7 @@ function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
-          permissionDecisionReason: `❌ TDD Guard (Bash): Cannot modify test files via shell commands in GREEN/REFACTOR phases.\n\nCommand: ${command.slice(0, 200)}\nCurrent subagent: ${currentSubagent}\n\nShell-based modifications to tests/ are blocked outside RED phase, just like Write/Edit.\nOnly tdd-test-writer can modify tests/ during RED phase.`,
+          permissionDecisionReason: `❌ TDD Guard (Bash): Cannot modify test files via shell commands in GREEN/REFACTOR phases.\n\nCommand: ${command.slice(0, 200)}\nCurrent subagent: ${currentSubagent}\n\nRecovery: Return to orchestrator. If tests need changes, escalate to tdd-test-writer via RED phase.\nSee policies/guard-rules.md for full role-permission matrix.`,
         },
       };
     }
@@ -230,7 +238,7 @@ function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           permissionDecision: 'ask',
-          permissionDecisionReason: `⚠️ TDD Guard (Bash): Modifying TDD enforcement files via shell command during an active subagent cycle.\n\nCommand: ${command.slice(0, 200)}\nCurrent subagent: ${currentSubagent}\n\nChanges to .claude/hooks/, .claude/skills/, or .claude/settings.json during TDD cycles risk disabling guard protections. This should only happen in a maintenance context, not during a TDD cycle.`,
+          permissionDecisionReason: `⚠️ TDD Guard (Bash): Modifying TDD enforcement files via shell command during an active subagent cycle.\n\nCommand: ${command.slice(0, 200)}\nCurrent subagent: ${currentSubagent}\n\nRecovery: Finish TDD cycle first. Modify enforcement files only from main agent outside TDD.\nSee policies/guard-rules.md for full role-permission matrix.`,
         },
       };
     }
@@ -256,7 +264,7 @@ function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): H
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'ask',
-        permissionDecisionReason: `⚠️ TDD Guard: Modifying TDD enforcement files during an active subagent cycle.\n\nFile: ${filePath}\nCurrent subagent: ${currentSubagent}\n\nChanges to .claude/hooks/, .claude/skills/, or .claude/settings.json during TDD cycles risk disabling guard protections. This should only happen in a maintenance context, not during a TDD cycle.`,
+        permissionDecisionReason: `⚠️ TDD Guard: Modifying TDD enforcement files during an active subagent cycle.\n\nFile: ${filePath}\nCurrent subagent: ${currentSubagent}\n\nRecovery: Finish TDD cycle first. Modify enforcement files only from main agent outside TDD.\nSee policies/guard-rules.md for full role-permission matrix.`,
       },
     };
   }
@@ -268,7 +276,7 @@ function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): H
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
-          permissionDecisionReason: `❌ TDD Guard: Cannot modify test files in GREEN/REFACTOR phases.\n\nFile: ${filePath}\nCurrent subagent: ${currentSubagent}\n\nOnly tdd-test-writer can modify tests/ during RED phase.\nIf you need to modify tests, ensure you're using the tdd-test-writer subagent or RED phase of TDD cycle.\n\nSee .claude/skills/tdd-integration/skill.md for TDD workflow details.`,
+          permissionDecisionReason: `❌ TDD Guard: Cannot modify test files in ${currentSubagent === 'unknown' ? 'unknown state' : currentSubagent + ' phase'}.\n\nFile: ${filePath}\nCurrent subagent: ${currentSubagent}\n\nRecovery: ${currentSubagent === 'unknown' ? 'Guard state is stale or unknown. Complete current work, then restart TDD cycle.' : 'Return to orchestrator. If tests need changes, escalate to tdd-test-writer via RED phase.'}\nSee policies/guard-rules.md for full role-permission matrix.`,
         },
       };
     }
@@ -320,6 +328,7 @@ function handleTaskToolUse(toolInput: Record<string, unknown>): HookOutput {
     writeState({
       activeSubagent: subagentName,
       lastUpdated: new Date().toISOString(),
+      sessionId: currentSessionId,
     });
   }
   return {
@@ -334,6 +343,7 @@ function handleSubagentStop(): HookOutput {
   writeState({
     activeSubagent: 'main',
     lastUpdated: new Date().toISOString(),
+    sessionId: currentSessionId,
   });
   return {};
 }
@@ -345,6 +355,7 @@ function main(): void {
     const hookEventName = inputData.hook_event_name || '';
     const toolName = inputData.tool_name || '';
     const toolInput = inputData.tool_input || {};
+    currentSessionId = inputData.session_id || undefined;
 
     let result: HookOutput;
 
