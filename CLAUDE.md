@@ -27,6 +27,7 @@ This project uses strict TDD with Red-Green-Refactor cycle using isolated subage
 
 ### Commands
 - `/tdd-integration` - Invoke full TDD cycle for feature implementation
+- `/tdd-full-review` - Full Task Review for last subtask (architecture + documentation)
 - Subagents are automatically delegated by the skill
 
 ### Test Structure
@@ -78,19 +79,33 @@ The project has **technical enforcement** of TDD discipline:
 - **Hooks**:
   - `PreToolUse`: `.claude/hooks/prevent-test-edit.ts` intercepts Write/Edit operations
   - `SubagentStop`: Same hook resets state when subagent completes
+  - `UserPromptSubmit`: `.claude/hooks/user-prompt-skill-eval.ts` auto-activates TDD skill
 - **State Tracking**: `.claude/.guard-state.json` tracks which subagent is active
   - Updated when Task tool invokes subagent
   - Reset to `'main'` when subagent finishes
+  - Session-scoped: parallel sessions do not interfere
   - Ignored by git (runtime state only)
 - **Enforcement Rules**:
   - ✅ `tdd-test-writer` can modify `tests/**` (RED phase)
   - ✅ `main` agent can modify `tests/**` (when no subagent active)
   - ❌ `tdd-implementer` CANNOT modify `tests/**` (GREEN phase blocked)
   - ❌ `tdd-refactorer` CANNOT modify `tests/**` (REFACTOR phase blocked)
+- **Policy**: Full role-permission matrix in `.claude/skills/tdd-integration/policies/guard-rules.md`
+- **Auto-activation rules**: `.claude/skills/tdd-integration/policies/auto-activation-rules.md`
 
 If any subagent tries to modify test files outside RED phase, the hook will automatically deny the Write/Edit operation with a clear error message.
 
 **This is not a guideline—it's a hard technical restriction.**
+
+### Skill Architecture
+
+The TDD Integration Skill uses a modular architecture:
+
+- **Orchestrator**: `.claude/skills/tdd-integration/skill.md` (state machine + routing)
+- **Phases**: `.claude/skills/tdd-integration/phases/*.md` (delegation details per phase)
+- **Schemas**: `.claude/skills/tdd-integration/schemas/*.md` (Phase Packet, Context Packet contracts)
+- **Policies**: `.claude/skills/tdd-integration/policies/*.md` (guard rules, activation rules)
+- **Forms**: `.claude/skills/tdd-integration/forms/*.md` (review checklists, templates)
 
 ## Module Documentation
 

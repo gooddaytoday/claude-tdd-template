@@ -78,7 +78,8 @@
       "Task(tdd-code-reviewer:*)",
       "Task(tdd-architect-reviewer:*)",
       "Task(tdd-documenter:*)",
-      "Skill(tdd-integration)"
+      "Skill(tdd-integration)",
+      "Skill(tdd-full-review)"
     ],
     "deny": [
       "Read(.env)",

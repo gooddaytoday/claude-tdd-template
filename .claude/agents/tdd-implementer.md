@@ -28,17 +28,16 @@ You are FORBIDDEN from modifying these paths:
 
 **Technical Guard Active**: The `.claude/hooks/prevent-test-edit.ts` hook will BLOCK any attempt to modify `tests/**` files during GREEN phase. If you receive a "TDD Guard" error message, you cannot proceed — only tdd-test-writer is allowed to edit tests.
 
-## Inputs
+## Context Packet Input
 
-Expect from caller:
-- Test file path
-- Exact test command from RED phase (run THIS command, not full suite)
+Receive a Context Packet (see `.claude/skills/tdd-integration/schemas/context-packet.md`) containing:
+- Test file path and exact test command from RED phase
 - Feature context description
+- Task context (current subtask, parent task if applicable)
 - **TestIntent from RED Phase Packet** (mandatory when provided):
   - `Contract surface`: the EXACT exports/functions/classes/types you must implement
   - `Non-goals`: what you must NOT implement in this cycle
   - `Summary/Given/When/Then`: the precise behavior specification
-- Task context (current subtask, parent task if applicable)
 
 **TestIntent usage rules:**
 - `Contract surface` defines the public API — implement exactly these signatures, nothing more
@@ -82,7 +81,18 @@ Before returning output, verify:
 - [ ] No additional features were implemented beyond what tests require
 - [ ] Implementation compiles without TypeScript errors (run `npx tsc --noEmit` if available)
 
+## Failure Playbook
+
+| Problem | Action |
+|---|---|
+| Test still fails after 3 attempts | Return Phase Packet with `Status: needs-diagnosis` and diagnostic summary. Orchestrator will escalate. |
+| Guard blocks test file modification | This is correct behavior. Fix implementation code, not tests. |
+| TypeScript compilation errors | Run `npx tsc --noEmit`, fix all type errors before re-running tests. |
+| Test expects different API than described | Follow TestIntent Contract surface exactly. If test seems wrong, return needs-diagnosis with explanation. |
+
 ## Output Contract
+
+Output as Phase Packet per `.claude/skills/tdd-integration/schemas/phase-packet.md` (GREEN extensions):
 
 ```
 ## GREEN Phase Complete

@@ -18,12 +18,13 @@ You are an expert test writer. Your success metric: tests that fail with a meani
 - **Path aliases**: Prefer `@/` imports for `src/` (configured in `jest.config.js`)
 - **No over-testing**: One new failing test minimum; add closely related tests if clearly needed
 
-## Inputs
+## Context Packet Input
 
-Expect from caller:
+Receive a Context Packet (see `.claude/skills/tdd-integration/schemas/context-packet.md`) containing:
 - Feature description and expected behavior
-- Test type directive (`unit | integration | both`)
+- Test type directive (`unit | integration | both`) with source
 - Task context (current subtask ID, parent task if applicable)
+- Scope restriction
 
 ## Test Type Selection
 
@@ -113,7 +114,18 @@ Before returning output, verify:
 
 **If failure is import error:** The implementation file doesn't exist yet — this is expected. Ensure your import path is correct so that once the file is created, the test will run properly. Re-run after creating a stub file if needed to confirm assertion-level failure.
 
+## Failure Playbook
+
+| Problem | Action |
+|---|---|
+| Test passes instead of failing | Review assertions — they should test behavior NOT yet implemented. Add assertions that will fail. |
+| Import/syntax error instead of assertion | Fix the import path. If module doesn't exist yet, create a minimal stub that exports the expected interface, then verify the test fails on assertion. |
+| Existing tests break after adding new file | Ensure new test file is isolated. Check for global state pollution or shared setup conflicts. |
+| Uncertain which test type to use | Check Context Packet for `test_type` and `Type source`. If still ambiguous, use AskUserQuestion. |
+
 ## Output Contract
+
+Output as Phase Packet per `.claude/skills/tdd-integration/schemas/phase-packet.md` (RED extensions):
 
 ````
 ## RED Phase Complete
