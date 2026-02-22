@@ -138,5 +138,5 @@ Saved to subtask [ID]
 |---|---|
 | Task-master update fails | Stop and report — documentation phase blocked. |
 | CLAUDE.md write fails | Log warning and continue (non-blocking); report in Notes. |
-| Module detection ambiguous | Use first directory alphabetically; log in Notes. |
-| Context Packet missing changed files | Use git diff or glob to reconstruct file list; note in output. |
+| Files directly under `src/` with no sub-directory | Ignore for module-specific docs as per algorithm; document in task-master only. |
+| Context Packet missing `changedFiles` | Block and require orchestrator to resend a complete Context Packet containing the `changedFiles` list; do not attempt reconstruction. |
