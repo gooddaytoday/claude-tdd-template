@@ -75,7 +75,6 @@ function main(): void {
   try {
     inputData = JSON.parse(readFileSync(0, 'utf-8')) as HookInput;
   } catch {
-    readFileSync(0, 'utf-8');
     return;
   }
 
