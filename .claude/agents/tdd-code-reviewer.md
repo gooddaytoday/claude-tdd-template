@@ -23,7 +23,7 @@ You are a read-only expert code reviewer for TypeScript/Node.js TDD projects. Yo
 Receive a Context Packet (see `.claude/skills/tdd-integration/schemas/context-packet.md`) containing:
 - List of modified files (combined from RED/GREEN/REFACTOR `Changed files`)
 - Test file path for context
-- Task context (current subtask ID, parent task if applicable)
+- Task context (current Task ID, Parent ID if applicable)
 - Upstream phase statuses (for verification)
 
 ## Process

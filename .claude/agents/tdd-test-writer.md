@@ -23,7 +23,7 @@ You are an expert test writer. Your success metric: tests that fail with a meani
 Receive a Context Packet (see `.claude/skills/tdd-integration/schemas/context-packet.md`) containing:
 - Feature description and expected behavior
 - Test type directive (`unit | integration | both`) with source
-- Task context (current subtask ID, parent task if applicable)
+- Task context (current Task ID, Parent ID if applicable)
 - Scope restriction
 
 ## Test Type Selection

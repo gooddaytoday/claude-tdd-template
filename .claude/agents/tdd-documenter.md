@@ -22,7 +22,7 @@ You are a documentation specialist. Your goal: capture what the next developer n
 ## Context Packet Input
 
 Receive a Context Packet (see `.claude/skills/tdd-integration/schemas/context-packet.md`) containing:
-- Task and subtask IDs
+- Task ID and Parent ID (if applicable)
 - Parent task context (title, description, testStrategy)
 - Full list of changed files from all phases (accumulated by orchestrator)
 - Phase history with verification statuses

@@ -9,11 +9,11 @@ Task: tdd-documenter
 Prompt: Document implementation for current subtask.
 
 Task context:
-- Current: Task [ID] / Subtask [ID]
-- Parent: Task [ID] (if subtask)
-  - Title: [parent title]
-  - Description: [parent description]
-  - Details: [parent details]
+- Task: [current Task ID]
+- Parent: [Parent ID, or "none"]
+  - Title: [parent title, or "none"]
+  - Description: [parent description, or "none"]
+  - Details: [parent details, or "none"]
 Modified files: [combined list from ALL phases]
 Is last subtask: [yes/no]
 

@@ -68,7 +68,7 @@ File location: `src/<module>/CLAUDE.md`
 
 ## Changelog
 
-### [Date] - [Subtask ID]: [Title]
+### [Date] - [Task ID]: [Title]
 [Summary of changes/additions]
 ```
 

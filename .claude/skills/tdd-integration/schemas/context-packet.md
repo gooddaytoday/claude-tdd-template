@@ -12,10 +12,10 @@ Eliminates context drift between phases. Every subagent receives the same author
 ## Context Packet
 
 ### Task
-- Task ID: [parent task ID]
-- Subtask ID: [current subtask ID, or "none" if top-level task]
-- Parent title: [parent task title]
-- Parent description: [parent task description]
+- Task ID: [current task ID]
+- Parent ID: [parent task ID, or "none"]
+- Parent title: [parent task title, or "none"]
+- Parent description: [parent task description, or "none"]
 - Parent testStrategy: [parent testStrategy field, or "none"]
 
 ### Feature

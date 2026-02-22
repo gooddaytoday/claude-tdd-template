@@ -9,13 +9,13 @@ Task: tdd-architect-reviewer
 Prompt: Review architecture and integration for current subtask.
 
 Task context:
-- Current: Task [ID] / Subtask [ID]
-- Parent: Task [ID] (if subtask)
-  - Title: [parent title]
-  - Description: [parent description]
-  - Details: [parent details]
-  - testStrategy: [parent testStrategy]
-  - Subtasks: [FULL list of ALL subtasks with IDs, titles, statuses, and details fields]
+- Task: [current Task ID]
+- Parent: [Parent ID, or "none"]
+  - Title: [parent title, or "none"]
+  - Description: [parent description, or "none"]
+  - Details: [parent details, or "none"]
+  - testStrategy: [parent testStrategy, or "none"]
+  - Subtasks: [FULL list of ALL subtasks with IDs, titles, statuses, and details fields, or "none"]
 Modified files (all phases): [combined Changed files from RED, GREEN, REFACTOR, CODE REVIEW]
 Last subtask: [yes/no]
 Upstream phases:

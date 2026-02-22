@@ -51,10 +51,10 @@ Build the Context Packet per schema defined in `schemas/context-packet.md`:
 ## Context Packet
 
 ### Task
-- Task ID: [parent task ID]
-- Subtask ID: [current subtask ID, or "none"]
-- Parent title: [parent task title]
-- Parent description: [parent task description]
+- Task ID: [current task ID]
+- Parent ID: [parent task ID, or "none"]
+- Parent title: [parent task title, or "none"]
+- Parent description: [parent task description, or "none"]
 - Parent testStrategy: [parent testStrategy field, or "none"]
 
 ### Feature
@@ -81,4 +81,4 @@ Pass `Context Packet` and `test_type` to RED phase delegation.
 |---|---|
 | Task-master unreachable | Proceed without parent context. Note in Context Packet: "Parent context unavailable." |
 | Test type ambiguous (equal heuristic scores) | Ask user via AskUserQuestion (see `.claude/utils/detect-test-type.md`) |
-| No task ID available | Use feature description only. Set Task ID and Subtask ID to "none". |
+| No task ID available | Use feature description only. Set Task ID and Parent ID to "none". |

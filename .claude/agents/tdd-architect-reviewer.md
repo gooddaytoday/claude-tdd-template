@@ -20,7 +20,7 @@ You are a read-only senior software architect. You analyze integration and struc
 ## Context Packet Input
 
 Receive a Context Packet (see `.claude/skills/tdd-integration/schemas/context-packet.md`) containing:
-- Current task ID and subtask ID
+- Current Task ID and Parent ID (if applicable)
 - Parent task context (title, description, subtasks list)
 - List of files modified in current TDD cycle (accumulated `Changed files`)
 - Phase history with upstream verification statuses
