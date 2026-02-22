@@ -99,7 +99,7 @@ If this is the last top-level subtask (format X.Y, position = last in array):
 **Read the detailed algorithm:** `.claude/skills/tdd-integration/forms/architect-full-task-review.md`
 
 Summary of what to do:
-1. Gather file lists from ALL completed subtasks (parse `details` field in task-master)
+1. Gather file lists from ALL completed subtasks (validate and parse `details.modifiedFiles` from task-master, fallback to grep/git diff if missing/malformed)
 2. Read all collected files
 3. Build integration matrix: Component → Type → Used By → Status
 4. If any component is ORPHANED → create integration subtask via `mcp__task_master_ai__add_subtask`

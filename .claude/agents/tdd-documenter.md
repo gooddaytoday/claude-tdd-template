@@ -52,7 +52,8 @@ Determine:
 
 Read the task-master update format from `.claude/skills/tdd-integration/forms/documenter-templates.md`.
 
-Call `mcp__task_master_ai__update_subtask` with implementation details grouped by module. Include:
+Call `mcp__task_master_ai__update_subtask` with implementation details grouped by module. Your update to the `details` payload MUST include:
+- `modifiedFiles` property: A structured array of `{file: string, phase?: string, subtaskId?: string}` representing all files changed (required for architecture review).
 - Affected modules list
 - Modified files per module with brief descriptions
 - Key components per module

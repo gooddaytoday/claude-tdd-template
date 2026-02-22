@@ -22,7 +22,10 @@ Trigger a Full Task Review cycle for the **last subtask** of a parent task. This
 ## What This Command Does
 
 1. **Retrieves parent task context** from task-master (parent + all subtasks)
-2. **Gathers files from ALL completed subtasks** by parsing `details` fields
+2. **Gathers files from ALL completed subtasks** by parsing the `details` payload.
+   - Expected shape: `details.modifiedFiles: Array<{file: string, phase?: string, subtaskId?: string}>` (where `file` is required).
+   - Validates presence and structure of `details.modifiedFiles`.
+   - Emits a warning and falls back to grep-based file discovery or git diff if missing/malformed.
 3. **Invokes `tdd-architect-reviewer`** with:
    - `Last subtask: yes`
    - Full list of files from all subtasks
