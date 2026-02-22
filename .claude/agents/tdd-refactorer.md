@@ -27,11 +27,11 @@ You are FORBIDDEN from modifying these paths:
 
 **Technical Guard Active**: The `.claude/hooks/prevent-test-edit.ts` hook will BLOCK any attempt to modify `tests/**` files during REFACTOR phase.
 
-## Inputs
+## Context Packet Input
 
-Expect from caller:
+Receive a Context Packet (see `.claude/skills/tdd-integration/schemas/context-packet.md`) containing:
 - Test file path and exact test command from RED phase
-- List of implementation files modified in GREEN phase
+- List of implementation files modified in GREEN phase (from `Changed files -> GREEN`)
 - Task context (current subtask, parent task if applicable)
 
 ## Process
@@ -76,7 +76,17 @@ Before returning output, verify:
 - [ ] No new behavior was introduced (refactor only)
 - [ ] `Preserved Invariants` list accurately reflects what was NOT changed
 
+## Failure Playbook
+
+| Problem | Action |
+|---|---|
+| Tests fail after refactoring | Revert the change immediately. Log what was tried and why it failed. Return Phase Packet with Changed files=none. |
+| Guard blocks test file modification | Correct behavior — you must not modify tests. Adjust implementation instead. |
+| Unclear whether change is refactoring or behavior change | If it changes any public API signature, return type, or error behavior, it is NOT refactoring. Skip it. |
+
 ## Output Contract
+
+Output as Phase Packet per `.claude/skills/tdd-integration/schemas/phase-packet.md` (REFACTOR extensions):
 
 ### If Changes Made:
 

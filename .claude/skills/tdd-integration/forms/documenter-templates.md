@@ -68,41 +68,22 @@ File location: `src/<module>/CLAUDE.md`
 
 ## Changelog
 
-### [Date] - [Subtask ID]: [Title]
+### [Date] - [Task ID]: [Title]
 [Summary of changes/additions]
 ```
 
 ## Task-Master Update Format
 
-Use this format when calling `mcp__task_master_ai__update_subtask`:
+Use this format when calling `mcp__task_master_ai__update_subtask`. Ensure your `details` payload includes the required `modifiedFiles` array for the architect reviewer, along with the markdown documentation.
 
-```
-## Implementation Details
-
-### Affected Modules
-- [module1] ([N] files)
-- [module2] ([N] files)
-
-### Module: [module1]
-**Modified Files:**
-- src/[module1]/File1.ts - [description]
-- src/[module1]/File2.ts - [description]
-
-**Key Components:**
-- [Component]: [description]
-
-**Architectural Decisions:**
-- [decision and rationale]
-
-### Module: [module2]
-[same structure]
-
-### Cross-Module Integration
-[How modules work together]
-
-### Testing Coverage
-- Unit tests: [what is covered]
-- Integration tests: [what is covered]
+```json
+{
+  "modifiedFiles": [
+    { "file": "src/module1/File1.ts", "phase": "GREEN" },
+    { "file": "src/module1/File2.ts", "phase": "REFACTOR" }
+  ],
+  "description": "## Implementation Details\n\n### Affected Modules\n- [module1] ([N] files)\n- [module2] ([N] files)\n\n### Module: [module1]\n**Modified Files:**\n- src/[module1]/File1.ts - [description]\n- src/[module1]/File2.ts - [description]\n\n**Key Components:**\n- [Component]: [description]\n\n**Architectural Decisions:**\n- [decision and rationale]\n\n### Module: [module2]\n[same structure]\n\n### Cross-Module Integration\n[How modules work together]\n\n### Testing Coverage\n- Unit tests: [what is covered]\n- Integration tests: [what is covered]"
+}
 ```
 
 ## Module Name Mapping

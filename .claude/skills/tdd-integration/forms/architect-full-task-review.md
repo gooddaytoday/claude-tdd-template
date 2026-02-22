@@ -28,13 +28,10 @@ function shouldPerformFullTaskReview(currentSubtaskId, parentTask) {
 For each subtask in `parentTask.subtasks`:
 
 1. Read subtask details field from task-master: `mcp__task_master_ai__get_task({ id: "<subtask-id>" })`
-2. Parse "Modified Files" section from details (format saved by tdd-documenter):
-   ```
-   ### Module: services
-   **Modified Files:**
-   - src/services/CreditService.ts - Credit management
-   ```
-3. Extract file paths using pattern: lines starting with `- src/` or `- tests/`
+2. Validate presence and structure of `details.modifiedFiles`:
+   - Expected shape: `Array<{file: string, phase?: string, subtaskId?: string}>` (the `file` field is required).
+   - If `details.modifiedFiles` is missing or malformed: emit a warning in your output notes and fall back to alternative discovery (grep-based file discovery or git diff).
+3. Extract the `file` paths from the valid `modifiedFiles` array.
 4. Collect unique paths across all subtasks into a master list
 
 **Fallback if no structured file list in details:**
