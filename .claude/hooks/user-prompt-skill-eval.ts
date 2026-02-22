@@ -27,7 +27,7 @@ const SKIP_PATTERNS = [
   /\b(?:update|edit|change)\s+(?:docs?|documentation|readme|config|configuration)\b/i,
   /\b(?:format|lint|prettier|eslint)\b/i,
   /\bgit\s+(?:commit|push|pull|merge|rebase|stash|checkout|branch)\b/i,
-  /\brefactor(?:ing)?\b/i,
+  /\brefactor(?:ing)?\b(?![\s\S]*\badd\b)/i,
   /\b(?:rename|move|reorganize|restructure)\b/i,
   /\b(?:remove|delete|deprecate)\b/i,
   /\b(?:explain|describe|what\s+is|how\s+does)\b/i,
@@ -47,7 +47,7 @@ const ACTIVATE_PATTERNS = [
 const SUGGEST_PATTERNS = [
   /\b(?:fix)\s+(?:build|compilation|type\s*error)\b/i,
   /\bupdate\s+(?:api|database|schema|integration)\b/i,
-  /\brefactor.*\badd\b/i,
+  /\brefactor[\s\S]*\badd\b/i,
   /\bimprove\s+(?:validation|error|handling|performance|security)\b/i,
   /\bextend\s+\w+/i,
   /\b(?:change|modify|alter)\s+(?:behavior|logic|flow)\b/i,
