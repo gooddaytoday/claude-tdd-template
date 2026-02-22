@@ -35,7 +35,7 @@ const SKIP_PATTERNS = [
 ];
 
 const ACTIVATE_PATTERNS = [
-  /\b(?:implement|develop)\s+\w+/i,
+  /\b(?:implement|develop)\s+(?:feature|endpoint|api|service|module|command|integration|\w+\s+\w+)/i,
   /\badd\s+(?:feature|functionality|capability|endpoint|route|handler|support)\b/i,
   /\bcreate\s+(?:service|handler|endpoint|module|component|model|utility|function)\b/i,
   /\bbuild\s+(?:api|auth|feature|system|module)\b/i,
