@@ -449,7 +449,7 @@ Add the new hook to `.claude/settings.json`:
 
 ---
 
-## Task 5 -- Orchestrator Integration
+## [DONE] Task 5 -- Orchestrator Integration
 
 **Goal**: Modify the TDD skill to invoke the telemetry subagent as a new phase.
 

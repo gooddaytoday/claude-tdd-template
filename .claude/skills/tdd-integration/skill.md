@@ -37,7 +37,7 @@ Full activation rules: `policies/auto-activation-rules.md`
 ## State Machine
 
 ```
-PRE-PHASE → RED → GREEN → REFACTOR → CODE_REVIEW → ARCH_REVIEW → DOCS → DONE
+PRE-PHASE → RED → GREEN → REFACTOR → CODE_REVIEW → ARCH_REVIEW → DOCS → TELEMETRY → DONE
                                           |               |
                                           ↓               ↓
                                       fix-routing     fix-routing
@@ -58,7 +58,8 @@ PRE-PHASE → RED → GREEN → REFACTOR → CODE_REVIEW → ARCH_REVIEW → DOC
 | REFACTOR | CODE_REVIEW | Tests remain green (orchestrator-verified) |
 | CODE_REVIEW | ARCH_REVIEW | Status=passed (no critical/major issues) |
 | ARCH_REVIEW | DOCS | Status=passed OR integration-subtask-created |
-| DOCS | DONE | Documentation saved |
+| DOCS | TELEMETRY | Documentation saved |
+| TELEMETRY | DONE | Run report written to airefinement/artifacts/runs/ |
 
 ### Retry Transitions
 
@@ -105,6 +106,9 @@ Read `phases/arch-review.md`. Invoke `tdd-architect-reviewer`. Gate: code integr
 ### Phase 6: DOCUMENTATION — Save Details
 Read `phases/docs.md`. Invoke `tdd-documenter`. Gate: documentation saved.
 
+### Phase 7: TELEMETRY -- Record Run Report
+Read `phases/telemetry.md`. Invoke `tdd-telemetry-reporter`. Gate: JSON file exists in airefinement/artifacts/runs/.
+
 ## Orchestrator Verification Protocol
 
 **CRITICAL: The orchestrator MUST verify test outcomes independently after RED, GREEN, and REFACTOR phases.**
@@ -141,8 +145,8 @@ Details in `phases/code-review.md` and `phases/arch-review.md`.
 
 Complete full cycle for EACH feature:
 ```
-Feature 1: RED → GREEN → REFACTOR → CODE_REVIEW → ARCH_REVIEW → DOCS
-Feature 2: RED → GREEN → REFACTOR → CODE_REVIEW → ARCH_REVIEW → DOCS
+Feature 1: RED → GREEN → REFACTOR → CODE_REVIEW → ARCH_REVIEW → DOCS → TELEMETRY
+Feature 2: RED → GREEN → REFACTOR → CODE_REVIEW → ARCH_REVIEW → DOCS → TELEMETRY
 ```
 
 ## Phase Violations (CRITICAL — never do this)
@@ -150,7 +154,7 @@ Feature 2: RED → GREEN → REFACTOR → CODE_REVIEW → ARCH_REVIEW → DOCS
 - Write implementation before test
 - Proceed without orchestrator verification at any gate
 - Skip any phase (including REFACTOR evaluation)
-- Modify tests during GREEN, REFACTOR, CODE_REVIEW, ARCH_REVIEW, or DOCS phases
+- Modify tests during GREEN, REFACTOR, CODE_REVIEW, ARCH_REVIEW, DOCS, or TELEMETRY phases
 - Ignore needs-fix status from reviewers
 - Route fixes from within reviewer subagents (orchestrator's job)
 - Trust Phase Packet status without running the test command yourself
@@ -186,6 +190,7 @@ After each complete TDD cycle, report:
 | CODE REVIEW | Done | tdd-code-reviewer | [issues: X fixed] |
 | ARCHITECTURE | Done | tdd-architect-reviewer | [integration: verified] |
 | DOCUMENTATION | Done | tdd-documenter | [saved to task-master] |
+| TELEMETRY | Done | tdd-telemetry-reporter | [run report file] |
 
 **Tests**: All passing (orchestrator-verified)
 **Code Quality**: Approved (no critical/major issues)
