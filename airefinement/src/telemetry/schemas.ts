@@ -47,6 +47,7 @@ export const RunReportSchema = z.object({
   guard_violations: z.array(GuardViolationEventSchema),
   overall_status: z.enum(['DONE', 'FAILED', 'ESCALATED']),
   partial_credit_score: z.number(),
+  total_tokens: z.number().optional(),
 });
 
 export type RunReport = z.infer<typeof RunReportSchema>;
@@ -61,6 +62,13 @@ export const SubagentTimingEventSchema = z.object({
 });
 
 export type SubagentTimingEvent = z.infer<typeof SubagentTimingEventSchema>;
+
+export const TraceEventSchema = z.union([
+  GuardViolationEventSchema,
+  SubagentTimingEventSchema,
+]);
+
+export type TraceEvent = z.infer<typeof TraceEventSchema>;
 
 export const GoldenDatasetTaskSchema = z.object({
   id: z.string(),
@@ -133,3 +141,112 @@ export const ExperimentResultSchema = z.object({
 });
 
 export type ExperimentResult = z.infer<typeof ExperimentResultSchema>;
+
+export const TriggerResultSchema = z.object({
+  type: z.enum(['event_driven', 'trend_based', 'commit_based']),
+  rule: z.string(),
+  severity: z.enum(['critical', 'warning', 'info']),
+  description: z.string(),
+  affected_phase: z.string().optional(),
+  affected_agent: z.string().optional(),
+  evidence: z.record(z.string(), z.unknown()),
+});
+
+export type TriggerResult = z.infer<typeof TriggerResultSchema>;
+
+export const EventDrivenConfigSchema = z.object({
+  guard_violation: z.object({
+    threshold: z.number(),
+    description: z.string(),
+  }),
+  gate_failure_streak: z.object({
+    threshold: z.number(),
+    description: z.string(),
+  }),
+  token_anomaly: z.object({
+    sigma_threshold: z.number(),
+    description: z.string(),
+  }),
+  manual_intervention_streak: z.object({
+    threshold: z.number(),
+    description: z.string(),
+  }),
+});
+
+export type EventDrivenConfig = z.infer<typeof EventDrivenConfigSchema>;
+
+export const TrendBasedConfigSchema = z.object({
+  tsr_drop: z.object({
+    threshold_percent: z.number(),
+    window_runs: z.number(),
+    description: z.string(),
+  }),
+  token_inflation: z.object({
+    threshold_percent: z.number(),
+    window_runs: z.number(),
+    description: z.string(),
+  }),
+  flake_rate: z.object({
+    threshold_percent: z.number(),
+    window_runs: z.number(),
+    description: z.string(),
+  }),
+});
+
+export type TrendBasedConfig = z.infer<typeof TrendBasedConfigSchema>;
+
+export const CommitBasedConfigSchema = z.object({
+  watched_paths: z.array(z.string()),
+  action: z.string(),
+  subset_size: z.number(),
+  block_if: z.string(),
+});
+
+export type CommitBasedConfig = z.infer<typeof CommitBasedConfigSchema>;
+
+export const TriggersConfigSchema = z.object({
+  auto_refinement_triggers: z.object({
+    event_driven: EventDrivenConfigSchema,
+    trend_based: TrendBasedConfigSchema,
+    commit_based: CommitBasedConfigSchema,
+  }),
+});
+
+export type TriggersConfig = z.infer<typeof TriggersConfigSchema>;
+
+export const ThresholdsConfigSchema = z.object({
+  pipeline_kpis: z.object({
+    tsr_target: z.number(),
+    pass_at_1_target: z.number(),
+    pass_3_target: z.number(),
+    code_quality_score_target: z.number(),
+    defect_escape_rate_max: z.number(),
+    gate_failure_rate_max_per_phase: z.number(),
+    guard_violations_max: z.number(),
+    flake_rate_max: z.number(),
+  }),
+  phase_gates: z.object({
+    RED: z.object({
+      must_fail_with_assertion: z.boolean(),
+    }),
+    GREEN: z.object({
+      must_pass: z.boolean(),
+      max_retries: z.number(),
+    }),
+    REFACTOR: z.object({
+      must_stay_green: z.boolean(),
+    }),
+    CODE_REVIEW: z.object({
+      max_fix_cycles: z.number(),
+    }),
+    ARCH_REVIEW: z.object({
+      max_fix_cycles: z.number(),
+    }),
+    DOCS: z.object({
+      must_update_task_master: z.boolean(),
+    }),
+  }),
+  role_metrics: z.record(z.string(), z.record(z.string(), z.union([z.number(), z.boolean()]))),
+});
+
+export type ThresholdsConfig = z.infer<typeof ThresholdsConfigSchema>;

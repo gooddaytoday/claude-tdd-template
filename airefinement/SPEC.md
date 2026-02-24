@@ -489,7 +489,7 @@ Add `Task(tdd-telemetry-reporter:*)` to `permissions.allow` in `.claude/settings
 
 ---
 
-## Task 6 -- Trigger Rules & Configuration
+## [DONE] Task 6 -- Trigger Rules & Configuration
 
 **Goal**: Define configurable trigger rules that determine when auto-refinement should activate.
 

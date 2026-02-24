@@ -6,11 +6,14 @@
     "outDir": "dist",
     "rootDir": ".",
     "strict": true,
+    "isolatedModules": true,
     "esModuleInterop": true,
+    "types": ["jest", "node"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@/*.js": ["src/*"]
     }
   },
-  "include": ["src/**/*", "bin/**/*"]
+  "include": ["src/**/*", "bin/**/*", "tests/**/*"]
 }
