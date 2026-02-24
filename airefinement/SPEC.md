@@ -165,7 +165,7 @@ airefinement/
 
 ---
 
-## Task 1 -- Project Infrastructure
+## [DONE] Task 1 -- Project Infrastructure
 
 **Goal**: Initialize `airefinement/` as a buildable TypeScript project with all directories.
 
