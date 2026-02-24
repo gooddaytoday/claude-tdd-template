@@ -228,7 +228,7 @@ artifacts/reports/
 
 ---
 
-## Task 2 -- Telemetry Schemas
+## [DONE] Task 2 -- Telemetry Schemas
 
 **Goal**: Define TypeScript types for all telemetry data structures used across the system.
 
