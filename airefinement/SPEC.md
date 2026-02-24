@@ -377,7 +377,7 @@ interface TaskComparison {
 
 ---
 
-## Task 3 -- Telemetry Subagent
+## [DONE] Task 3 -- Telemetry Subagent
 
 **Goal**: Create a new Claude Code subagent `tdd-telemetry-reporter` that writes structured Run Reports.
 
