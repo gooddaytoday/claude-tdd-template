@@ -625,7 +625,7 @@ interface TriggerResult {
 
 ---
 
-## Task 7 -- Trigger Analyzer
+## [DONE] Task 7 -- Trigger Analyzer
 
 **Goal**: CLI-callable module that reads artifacts, applies trigger rules, and outputs results.
 

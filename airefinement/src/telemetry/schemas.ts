@@ -154,6 +154,17 @@ export const TriggerResultSchema = z.object({
 
 export type TriggerResult = z.infer<typeof TriggerResultSchema>;
 
+export const AnalysisResultSchema = z.object({
+  timestamp: z.string(),
+  runs_analyzed: z.number(),
+  traces_analyzed: z.number(),
+  triggers_fired: z.array(TriggerResultSchema),
+  recommendation: z.enum(['refine', 'eval_only', 'no_action']),
+  summary: z.string(),
+});
+
+export type AnalysisResult = z.infer<typeof AnalysisResultSchema>;
+
 export const EventDrivenConfigSchema = z.object({
   guard_violation: z.object({
     threshold: z.number(),
