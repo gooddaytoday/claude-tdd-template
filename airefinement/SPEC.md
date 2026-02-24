@@ -410,7 +410,7 @@ Create `.claude/skills/tdd-integration/phases/telemetry.md`:
 
 ---
 
-## Task 4 -- Telemetry Hooks
+## [DONE] Task 4 -- Telemetry Hooks
 
 **Goal**: Instrument existing hooks to log trace events for violation tracking and phase timing.
 

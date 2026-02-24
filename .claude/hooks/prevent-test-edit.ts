@@ -21,6 +21,7 @@ interface HookInput {
   tool_input: Record<string, unknown>;
   cwd: string;
   session_id: string;
+  agent_type?: string;
 }
 
 interface GuardState {
@@ -170,7 +171,7 @@ function writeState(state: GuardState): void {
 }
 
 function extractSubagentName(toolInput: Record<string, unknown>): string | null {
-  const name = (toolInput.task_name || toolInput.name) as string | undefined;
+  const name = toolInput.subagent_type as string | undefined;
   return name || null;
 }
 
@@ -424,6 +425,18 @@ function handleSubagentStop(): HookOutput {
   return {};
 }
 
+function handleSubagentStart(agentType?: string): HookOutput {
+  if (!agentType) {
+    return {};
+  }
+  writeState({
+    activeSubagent: agentType,
+    lastUpdated: new Date().toISOString(),
+    sessionId: currentSessionId,
+  });
+  return {};
+}
+
 function main(): void {
   try {
     const inputData = JSON.parse(readFileSync(0, 'utf-8')) as HookInput;
@@ -435,14 +448,16 @@ function main(): void {
 
     let result: HookOutput;
 
-    if (hookEventName === 'SubagentStop') {
+    if (hookEventName === 'SubagentStart') {
+      result = handleSubagentStart(inputData.agent_type);
+    } else if (hookEventName === 'SubagentStop') {
       result = handleSubagentStop();
     } else if (toolName === 'Task') {
       result = handleTaskToolUse(toolInput);
     } else if (toolName === 'Bash') {
       // A1: Intercept Bash commands that could write to tests/
       result = handleBashCommand(toolInput);
-    } else if (toolName === 'Write' || toolName === 'Edit' || toolName === 'MultiEdit') {
+    } else if (toolName === 'Write' || toolName === 'Edit') {
       result = handleFileEdit(toolName, toolInput);
     } else {
       result = {

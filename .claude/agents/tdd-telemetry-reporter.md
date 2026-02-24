@@ -2,7 +2,7 @@
 name: tdd-telemetry-reporter
 description: Collects phase results from the completed TDD cycle and writes a structured JSON Run Report.
 tools: Read, Bash, Write
-model: fast
+model: haiku
 permissionMode: default
 ---
 

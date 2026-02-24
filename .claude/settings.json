@@ -1,6 +1,6 @@
 {
-  "defaultMode": "acceptEdits",
   "permissions": {
+    "defaultMode": "acceptEdits",
     "allow": [
       "Read",
       "Glob",
@@ -129,6 +129,18 @@
   },
   "hooks": {
     "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx tsx \"$CLAUDE_PROJECT_DIR/.claude/hooks/prevent-test-edit.ts\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
       {
         "matcher": "",
         "hooks": [
