@@ -907,7 +907,7 @@ The prompt must explicitly list allowed modification paths. Additionally, after 
 
 ---
 
-## Task 12 -- Golden Dataset & Task Format
+## [DONE] Task 12 -- Golden Dataset & Task Format
 
 **Goal**: Create the baseline Golden Dataset and define the task format for eval runs.
 

@@ -113,6 +113,7 @@ This section is for project-specific module documentation. Create CLAUDE.md file
 
 - [Metrics Module](airefinement/src/metrics/CLAUDE.md) - Metrics evaluation and threshold comparison
 - [Refinement Module](airefinement/src/refinement/CLAUDE.md) - AI self-improvement loop: diagnosis prompt building, experiment branch management, scope-restricted Claude CLI invocation
+- [Eval Module](airefinement/src/eval/CLAUDE.md) - Golden Dataset reader and eval infrastructure: loadGoldenDataset, filterByTestType, filterByDifficulty
 
 <!-- Example structure:
 - [Services Module](src/services/CLAUDE.md) - Business logic services
