@@ -792,7 +792,7 @@ Simple Mustache-style variable substitution for prompt templates (`{{variable}}`
 
 ---
 
-## Task 10 -- Git Utilities
+## [DONE] Task 10 -- Git Utilities
 
 **Goal**: Functions for git branch management needed by the refinement workflow.
 

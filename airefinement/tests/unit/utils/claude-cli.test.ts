@@ -34,7 +34,7 @@ describe('Claude CLI Wrapper', () => {
       };
 
       const resultPromise = runClaude(options);
-      
+
       // Simulate process end
       mockProcess.stdout.end('mock output');
       mockProcess.stderr.end('');
@@ -96,10 +96,10 @@ describe('Claude CLI Wrapper', () => {
       };
 
       const resultPromise = runClaude(options);
-      
+
       // We don't close the process immediately. Wait for timeout.
       await new Promise(resolve => setTimeout(resolve, 150));
-      
+
       // The promise should have rejected or returned with timeout error
       await expect(resultPromise).rejects.toThrow(/timeout/i);
       expect(mockProcess.kill).toHaveBeenCalled();
