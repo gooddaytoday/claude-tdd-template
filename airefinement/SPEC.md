@@ -819,7 +819,7 @@ All functions use `child_process.execFile` for safety (no shell injection).
 
 ---
 
-## Task 11 -- AI Refinement Agent Runner
+## [DONE] Task 11 -- AI Refinement Agent Runner
 
 **Goal**: Launch Claude CLI with the Self-Improvement Loop pattern to diagnose and fix harness issues.
 

@@ -112,6 +112,7 @@ The TDD Integration Skill uses a modular architecture:
 This section is for project-specific module documentation. Create CLAUDE.md files in your modules and link them here.
 
 - [Metrics Module](airefinement/src/metrics/CLAUDE.md) - Metrics evaluation and threshold comparison
+- [Refinement Module](airefinement/src/refinement/CLAUDE.md) - AI self-improvement loop: diagnosis prompt building, experiment branch management, scope-restricted Claude CLI invocation
 
 <!-- Example structure:
 - [Services Module](src/services/CLAUDE.md) - Business logic services
