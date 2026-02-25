@@ -669,7 +669,7 @@ interface AnalysisResult {
 
 ---
 
-## Task 8 -- Metrics Engine
+## [DONE] Task 8 -- Metrics Engine
 
 **Goal**: Compute role-specific metrics and pipeline KPIs from collected RunReports.
 
@@ -742,7 +742,7 @@ Add function:
 
 ---
 
-## Task 9 -- Claude CLI Wrapper
+## [DONE] Task 9 -- Claude CLI Wrapper
 
 **Goal**: Utility for launching Claude CLI processes with structured input/output.
 

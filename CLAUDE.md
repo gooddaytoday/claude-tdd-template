@@ -111,6 +111,8 @@ The TDD Integration Skill uses a modular architecture:
 
 This section is for project-specific module documentation. Create CLAUDE.md files in your modules and link them here.
 
+- [Metrics Module](airefinement/src/metrics/CLAUDE.md) - Metrics evaluation and threshold comparison
+
 <!-- Example structure:
 - [Services Module](src/services/CLAUDE.md) - Business logic services
 - [Handlers Module](src/handlers/CLAUDE.md) - Request/command handlers

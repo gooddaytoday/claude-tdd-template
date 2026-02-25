@@ -13,9 +13,9 @@ const mockReadRunReports = jest.fn<(dir: string) => RunReport[]>();
 const mockReadTraceEvents = jest.fn<(dir: string) => TraceEvent[]>();
 const mockGetLatestBaseline = jest.fn<(dir: string) => AggregatedMetrics | null>();
 
-const mockCheckEventDrivenTriggers = jest.fn<() => TriggerResult[]>();
-const mockCheckTrendBasedTriggers = jest.fn<() => TriggerResult[]>();
-const mockCheckCommitBasedTriggers = jest.fn<() => TriggerResult[]>();
+const mockCheckEventDrivenTriggers = jest.fn<(runs: RunReport[], traces: TraceEvent[], config: any) => TriggerResult[]>();
+const mockCheckTrendBasedTriggers = jest.fn<(runs: RunReport[], baseline: AggregatedMetrics, config: any) => TriggerResult[]>();
+const mockCheckCommitBasedTriggers = jest.fn<(changedFiles: string[], config: any) => TriggerResult[]>();
 
 jest.unstable_mockModule('@/telemetry/collector.js', () => ({
   readRunReports: mockReadRunReports,
