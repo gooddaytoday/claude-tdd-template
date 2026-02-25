@@ -14,7 +14,9 @@ Created the dataset reader foundation for eval pipeline.
 
 - `dataset-reader.ts` — reads and filters GoldenDatasetTask entries from JSONL files
 - `graders/deterministic.ts` — 4 deterministic graders for scoring TDD pipeline runs (Task 13)
-- `graders/` — LLM-judge, composite graders (Task 14+)
+- `graders/llm-judge.ts` — LLM-based grader via Claude CLI with rubric files (Task 14.2)
+- `graders/calibration.ts` — Spearman correlation calibration between human and LLM scores (Task 14.3)
+- `graders/` — composite graders (Task 15+)
 
 ### Functions
 
@@ -73,6 +75,84 @@ Implemented 4 deterministic grader functions in `graders/deterministic.ts`.
 
 ---
 
+## Implementation Details
+
+### Phase: Task 14.2 — LLM-Judge Grader
+
+Implemented LLM-based grader in `graders/llm-judge.ts` using Claude CLI as evaluation engine.
+
+### Exported Interface
+
+- `LlmJudgeInput` — `{ rubricPath: string, codeToEvaluate: string, contextFiles?: Record<string, string> }`
+
+### Grader Function
+
+#### `evaluateWithLlmJudge(input: LlmJudgeInput): Promise<GraderResult>`
+- Reads rubric markdown from `input.rubricPath` via `readFile`
+- Assembles prompt: rubric + `## Code to Evaluate` section + optional `## Context: <filename>` sections
+- Calls `runClaude({ maxTurns: 1, prompt, workingDirectory: process.cwd() })`
+- Extracts JSON from Claude's response (strips ` ```json ... ``` ` markdown blocks via regex)
+- Normalizes score: counts numeric dimension fields (excluding `total` and `rationale`), uses `Math.max` of actual values as per-dimension max — rubric-agnostic
+- pass threshold: `score >= 0.5`
+- grader tag: `'LlmJudgeGrader'`
+
+**Graceful degradation (3 paths — all return `score: 0, pass: false`):**
+- `readFile` failure → `{ skipped: true, error: 'Failed to read rubric: ...' }`
+- `runClaude` throws → `{ skipped: true, error: String(err) }`
+- `claudeResult.exitCode !== 0` → `{ skipped: true, error: 'Claude exited with code N: ...' }`
+- `JSON.parse` failure → `{ parseError: true, error: String(err) }`
+
+### Internal Helpers
+
+- `failResult(details)` — DRY helper: `{ grader: GRADER_NAME, score: 0, pass: false, details }`
+- `extractJson(stdout)` — strips ` ```json ... ``` ` markdown code blocks via `/```json\s*([\s\S]*?)\s*```/`
+- `normalizeScore(parsed)` — counts numeric dimension fields (excluding `total`, `rationale`), uses `Math.max` as per-dimension max; NaN-safe (`typeof parsed['total'] === 'number' ? ... : 0`)
+- `assemblePrompt(rubric, code, contextFiles?)` — builds multi-section prompt string
+
+### Key Design Decisions
+
+- **Rubric-agnostic scoring**: `Math.max` of dimension values as per-dimension max — no hardcoded scale assumptions
+- **NaN prevention**: explicit `typeof ... === 'number'` guard on `parsed['total']` before division
+- **`GRADER_NAME` constant**: avoids string literal duplication across `failResult` and success path
+- **`contextFiles`**: optional map of filename → content for multi-file evaluation context
+
+---
+
+## Implementation Details
+
+### Phase: Task 14.3 — Calibration
+
+Implemented Spearman correlation calibration in `graders/calibration.ts`. Pure computation module — no I/O, no external project dependencies.
+
+### Exported Interface
+
+- `CalibrationResult` — `{ rubric: string, spearman_correlation: number, sample_size: number, calibrated: boolean }`
+
+### Exported Function
+
+#### `calibrateLlmJudge(rubric, humanAnnotations, llmScores): Promise<CalibrationResult>`
+- `humanAnnotations: Array<{ input: string; humanScore: number }>` — reference human scores
+- `llmScores: Array<{ input: string; llmScore: number }>` — LLM-produced scores to calibrate
+- Validates `n >= 2` (throws `Error` on smaller sample — division by zero prevention)
+- Validates arrays have equal length (throws `Error` on mismatch)
+- Computes Spearman ρ via `rankArray` + `spearmanCorrelation` private helpers
+- `calibrated: true` when `rho >= 0.80` (hardcoded threshold — tech debt for future parameterization)
+- Returns synchronously inside `async` wrapper for API consistency with other graders
+
+### Internal Helpers (unexported)
+
+- `rankArray(values)` — sorts + groups tied values, assigns 1-based average rank (standard Spearman ties handling)
+- `spearmanCorrelation(ranks1, ranks2)` — `1 - (6 * Σd²) / (n * (n²-1))` formula
+
+### Key Design Decisions
+
+- **Independent module**: `calibration.ts` does NOT import `llm-judge.ts`; they are separate graders with no dependency on each other
+- **Pure computation**: zero I/O, zero project imports; only TypeScript primitives
+- **`async` wrapper**: function is `async` for interface consistency, not because it needs async I/O
+- **Hardcoded `0.80` threshold**: `calibrated` flag; parameterization deferred as tech debt
+
+---
+
 ## Architecture
 
 ### Design Patterns
@@ -91,6 +171,8 @@ Implemented 4 deterministic grader functions in `graders/deterministic.ts`.
 - **Data source**: `airefinement/datasets/golden-v1.jsonl` (and future versions)
 - **No circular dependencies**: `eval/` depends on `telemetry/`, never the reverse
 - **graders/deterministic.ts**: leaf module — only imports Node.js built-ins (`node:child_process`, `node:fs/promises`, `node:path`); no circular deps; consumed by Task 15 (composite.ts) and Task 16 (runner.ts)
+- **graders/llm-judge.ts**: imports `GraderResult` from `@/eval/graders/deterministic.js` and `runClaude` from `@/utils/claude-cli.js`; no circular deps; consumed by Task 15 (composite.ts)
+- **graders/calibration.ts**: leaf module — zero project imports (pure computation); no circular deps; independent of `llm-judge.ts`; consumed by Task 15 (composite.ts) and Task 16 (runner.ts)
 - **violations.jsonl path**: hardcoded as `artifacts/traces/violations.jsonl` relative to `workingDirectory`
 
 ### Error Handling
@@ -104,6 +186,14 @@ Implemented 4 deterministic grader functions in `graders/deterministic.ts`.
   - `ENOENT` on `violations.jsonl` → pass through (score 1.0)
   - Other `readFile` errors → rethrown as-is
   - Invalid JSON in `violations.jsonl` → `Error('Invalid JSON in violations.jsonl at line N: ...')`
+- Error scenarios (llm-judge):
+  - `readFile` failure → `{ skipped: true }` (score 0)
+  - `runClaude` throws → `{ skipped: true }` (score 0)
+  - Non-zero exit code → `{ skipped: true }` (score 0)
+  - Invalid JSON in Claude response → `{ parseError: true }` (score 0)
+- Error scenarios (calibration):
+  - `n < 2` → `Error('calibrateLlmJudge requires at least 2 samples, got N')`
+  - Array length mismatch → `Error('humanAnnotations and llmScores must have the same length')`
 
 ### Key Design Notes
 
@@ -119,6 +209,8 @@ Implemented 4 deterministic grader functions in `graders/deterministic.ts`.
 - Key test files:
   - `dataset-reader.test.ts` (14 tests) — valid JSONL parsing, empty file, non-existent file, invalid JSON with line number, schema validation error with line number, filterByTestType, filterByDifficulty
   - `graders/deterministic.test.ts` (23 tests) — covers all 4 graders; uses `jest.unstable_mockModule` for ESM-compatible mocking of `node:child_process` and `node:fs/promises`
+  - `graders/llm-judge.test.ts` (14 tests) — covers success path, markdown JSON extraction, `runClaude` configs, 3 graceful degradation scenarios (readFile failure, runClaude throw, non-zero exit), parseError path
+  - `graders/calibration.test.ts` (17 tests) — perfect correlation, inverse, strong (0.9), weak (0.5), boundary (0.8), tied ranks (average), n=2 edge case, validation guards (n<2, length mismatch)
 
 ### Integration Tests
 
@@ -189,16 +281,85 @@ try {
 }
 ```
 
+## Usage Examples
+
+### Evaluate code with LLM judge
+
+```typescript
+import { evaluateWithLlmJudge, type LlmJudgeInput } from '@/eval/graders/llm-judge.js';
+
+const input: LlmJudgeInput = {
+  rubricPath: 'airefinement/config/rubrics/test-writer-quality.md',
+  codeToEvaluate: `// code under evaluation`,
+  contextFiles: {
+    'task-description.md': 'Feature: implement X...',
+  },
+};
+
+const result = await evaluateWithLlmJudge(input);
+// result: { grader: 'LlmJudgeGrader', score: 0..1, pass: boolean, details: { rationale, rawResponse } }
+// On failure: { score: 0, pass: false, details: { skipped: true, error: '...' } }
+```
+
+## Usage Examples
+
+### Calibrate LLM judge against human annotations
+
+```typescript
+import { calibrateLlmJudge, type CalibrationResult } from '@/eval/graders/calibration.js';
+
+const result: CalibrationResult = await calibrateLlmJudge(
+  'test-writer-quality',
+  [
+    { input: 'task-1', humanScore: 0.9 },
+    { input: 'task-2', humanScore: 0.4 },
+    { input: 'task-3', humanScore: 0.7 },
+  ],
+  [
+    { input: 'task-1', llmScore: 0.85 },
+    { input: 'task-2', llmScore: 0.35 },
+    { input: 'task-3', llmScore: 0.75 },
+  ],
+);
+
+console.log(result.spearman_correlation); // e.g. 0.9
+console.log(result.calibrated);           // true (rho >= 0.80)
+console.log(result.sample_size);          // 3
+```
+
 ## Related Tasks
 
 - Task 2: Telemetry Schemas — defines `GoldenDatasetTask` type and `GoldenDatasetTaskSchema`
 - Task 12: Golden Dataset & Task Format — created this module and the initial dataset
 - Task 13: Deterministic Graders — implemented `graders/deterministic.ts` with 4 graders
-- Task 14: LLM-Judge Grader — will add `graders/llm-judge.ts`
+- Task 14.1: Rubric Files — markdown rubric files in `config/rubrics/` consumed by llm-judge
+- Task 14.2: LLM-Judge Grader — implemented `graders/llm-judge.ts`
+- Task 14.3: Calibration — implemented `graders/calibration.ts` with Spearman ρ calibration
 - Task 15: Composite Grader — will consume deterministic + LLM graders in `graders/composite.ts`
 - Task 16: Eval Runner — will orchestrate all graders via `eval/runner.ts`
 
 ## Changelog
+
+### 2026-02-25 — Task 14.3: Calibration
+
+- Created `src/eval/graders/calibration.ts` — pure computation module, zero project imports
+- Exported interface: `CalibrationResult` (`rubric`, `spearman_correlation`, `sample_size`, `calibrated`)
+- Exported function: `calibrateLlmJudge(rubric, humanAnnotations, llmScores): Promise<CalibrationResult>`
+- Internal helpers: `rankArray` (average rank for ties), `spearmanCorrelation` (Spearman ρ formula)
+- `calibrated: rho >= 0.80` hardcoded threshold (tech debt for future parameterization)
+- Input validation: throws on `n < 2` and array length mismatch
+- Unit tests: `tests/unit/eval/graders/calibration.test.ts` (17 tests)
+- **Architecture note**: `calibration.ts` is independent of `llm-judge.ts` — no import relationship
+
+### 2026-02-25 — Task 14.2: LLM-Judge Grader
+
+- Created `src/eval/graders/llm-judge.ts` with `evaluateWithLlmJudge` function
+- Exported interface: `LlmJudgeInput` (`rubricPath`, `codeToEvaluate`, `contextFiles?`)
+- Internal helpers: `failResult`, `extractJson`, `normalizeScore`, `assemblePrompt`
+- Rubric-agnostic score normalization via `Math.max` of dimension values (no hardcoded scale)
+- 4 graceful degradation paths: readFile failure, runClaude throw, non-zero exit, JSON parse error
+- Unit tests: `tests/unit/eval/graders/llm-judge.test.ts` (14 tests)
+- CODE_REVIEW fixes: NaN guard on `parsed['total']`, `GRADER_NAME` constant, `failResult` helper
 
 ### 2026-02-25 — Task 13: Deterministic Graders
 

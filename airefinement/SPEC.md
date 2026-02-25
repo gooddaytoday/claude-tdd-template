@@ -960,7 +960,7 @@ Add `airefinement/datasets/README.md` documenting:
 
 ---
 
-## Task 13 -- Deterministic Graders
+## [DONE] Task 13 -- Deterministic Graders
 
 **Goal**: Code-based graders that evaluate outcomes objectively.
 
@@ -1011,7 +1011,7 @@ Implement graders:
 
 ---
 
-## Task 14 -- LLM-Judge Graders & Rubrics
+## [DONE] Task 14 -- LLM-Judge Graders & Rubrics
 
 **Goal**: LLM-based graders for subjective quality dimensions, plus calibration infrastructure.
 
