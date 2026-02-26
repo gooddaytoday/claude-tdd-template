@@ -1277,7 +1277,7 @@ Generate reports in two formats:
 
 ---
 
-## Task 18 -- CLI Entry Point
+## [DONE] Task 18 -- CLI Entry Point
 
 **Goal**: Commander-based CLI that exposes all module functionality.
 
@@ -1323,7 +1323,7 @@ Convention-based defaults:
 
 ---
 
-## Task 19 -- End-to-End Integration Test
+## [DONE] Task 19 -- End-to-End Integration Test
 
 **Goal**: Verify the full pipeline works from artifact collection to experiment report.
 
