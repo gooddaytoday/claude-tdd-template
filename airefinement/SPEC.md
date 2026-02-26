@@ -1151,7 +1151,7 @@ interface PartialCreditBreakdown {
 
 ---
 
-## Task 16 -- Eval Runner (A/B Protocol)
+## [DONE] Task 16 -- Eval Runner (A/B Protocol)
 
 **Goal**: Orchestrate the 8-step A/B experiment protocol using Claude CLI.
 

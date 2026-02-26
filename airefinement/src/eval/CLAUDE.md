@@ -17,6 +17,7 @@ Created the dataset reader foundation for eval pipeline.
 - `graders/llm-judge.ts` — LLM-based grader via Claude CLI with rubric files (Task 14.2)
 - `graders/calibration.ts` — Spearman correlation calibration between human and LLM scores (Task 14.3)
 - `graders/composite.ts` — weighted ensemble of 7 graders with partial credit scoring (Tasks 15.1–15.2)
+- `runner.ts` — A/B eval orchestrator: full 8-step A/B experiment protocol, sampleQuickSubset, runEval (Tasks 16.1–16.3)
 
 ### Functions
 
@@ -234,6 +235,129 @@ final_score             = phase_progression_score * 0.4 + grader_ensemble_score 
 
 ---
 
+---
+
+## Implementation Details
+
+### Phase: Task 16.1 — Eval Runner (Pure Aggregation Logic)
+
+Implemented pure synchronous functions for A/B result aggregation in `runner.ts`.
+
+### Exported Interfaces
+
+- `TaskTrialResult` — `{ task_id: string, trial: number, composite_result: CompositeResult, duration_ms: number, claude_exit_code: number }`
+- `EvalRunConfig` — `{ datasetPath, taskIds?, trials, hypothesis, variantDescription, controlBranch, variantBranch, graderConfig: CompositeConfig, timeout, quick?, quickSampleSize? }`
+
+### Pure Functions
+
+#### `aggregateTrialResults(results, taskCount, trials): AggregatedMetrics`
+- Groups `TaskTrialResult[]` by `task_id`, computes mean `composite_result.overall_score` per task
+- Aggregates across tasks: mean, min, max scores; counts `pass_count` where `composite_result.pass === true`
+- Returns `AggregatedMetrics` with `mean_score`, `min_score`, `max_score`, `pass_rate`, `total_trials`
+
+#### `buildTaskComparisons(controlResults, variantResults): TaskComparison[]`
+- Joins control and variant `TaskTrialResult[]` by `task_id`
+- For each task: computes mean scores per branch, derives `score_delta = variant_mean - control_mean`
+- Returns `TaskComparison[]` — one entry per task present in either set (missing side = score 0)
+
+#### `makeDecision(control, variant, comparisons): { decision, rationale }`
+- Compares `variant.mean_score` vs `control.mean_score`
+- `decision`: `'use_variant'` | `'keep_control'` | `'inconclusive'`
+- `inconclusive` when `|delta| < 0.05` threshold (hardcoded)
+- `rationale`: human-readable string with delta and pass rates
+
+---
+
+## Implementation Details
+
+### Phase: Task 16.2 — Eval Runner (Environment Isolation)
+
+Added worktree-based environment isolation functions in `runner.ts` and `utils/git.ts`.
+
+### Functions in runner.ts
+
+#### `snapshotManifest(worktreePath, datasetVersion): Promise<VersionManifest>`
+- Internal `collectFiles(dirPath)`: recursive `readdir`, returns `[]` on `ENOENT` (graceful for missing dirs)
+- Hashes `.claude/agents/`, `.claude/skills/`, `.claude/hooks/` via `collectFiles + hashFiles`
+- Hashes `.claude/settings.json` directly
+- Returns `VersionManifest` with `dataset_version`, `agents_hash`, `skills_hash`, `hooks_hash`, `settings_hash`
+
+#### `runTrialsOnBranch(tasks, branch, config, worktreeBasePath): Promise<TaskTrialResult[]>`
+- Exported function that creates a worktree for the branch, delegates to `runTrialsInWorktree`, cleans up in `finally`
+- Derives worktree path: `join(worktreeBasePath, safeBranch)` where `safeBranch` replaces `/` → `-`
+- Creates git worktree via `addWorktree`, cleans up in `finally` (even on error)
+
+### Functions in utils/git.ts
+
+#### `addWorktree(path, branch): Promise<void>`
+- Runs `git worktree add <path> <branch>`
+
+#### `removeWorktree(path): Promise<void>`
+- Runs `git worktree remove <path> --force`
+
+### Key Design Decisions
+
+- **ENOENT-only catch in `collectFiles`**: catches only `ENOENT`, not all errors — unexpected FS errors bubble up
+- **`finally` cleanup**: worktree removal in `finally` guarantees cleanup even when trial loop throws
+
+---
+
+## Implementation Details
+
+### Phase: Task 16.3 — Eval Runner (Quick Mode + runEval Orchestrator)
+
+Completed `runner.ts` with `sampleQuickSubset` and the full `runEval` 8-step A/B orchestrator.
+
+### Exported Functions
+
+#### `sampleQuickSubset(tasks, count): GoldenDatasetTask[]`
+- Fisher-Yates shuffle on a spread copy of input array (`[...tasks]`)
+- Returns first `count` elements from shuffled copy
+- Preserves object references (shallow copy — tests can use `toBe` for identity assertions)
+- If `count >= tasks.length`, returns full shuffled copy (no truncation guard needed)
+
+#### `runEval(config): Promise<ExperimentResult>`
+Full 8-step A/B experiment protocol:
+1. Load dataset via `loadGoldenDataset(config.datasetPath)`
+2. Filter to `config.taskIds` if provided
+3. Quick mode sampling: if `config.quick === true`, apply `sampleQuickSubset(tasks, config.quickSampleSize ?? 5)`
+4. Run control branch via `runBranch` closure (see below)
+5. Run variant branch via `runBranch` closure
+6. Aggregate control results via `aggregateTrialResults`
+7. Aggregate variant results via `aggregateTrialResults`
+8. Build comparisons via `buildTaskComparisons`, make decision via `makeDecision`; return `ExperimentResult`
+
+### Private Helper
+
+#### `runTrialsInWorktree(worktreePath, tasks, config)` (not exported)
+- Shared trial loop called by both `runTrialsOnBranch` (exported, for external callers) and `runEval`'s `runBranch` closure
+- Iterates tasks × `config.trials`: calls `runClaude` per iteration, grades via `gradeComposite`
+- Measures `duration_ms` per trial with `Date.now()` before/after `runClaude`
+
+### Key Design Decisions
+
+- **`runEval` does NOT call `runTrialsOnBranch`**: uses internal `runBranch` closure that sequences `addWorktree → snapshotManifest → runTrialsInWorktree → removeWorktree` (in `finally`). This ensures snapshot is taken WHILE worktree exists (correct A/B semantics — snapshot of the environment under test, not before or after).
+- **`runTrialsOnBranch` remains exported**: delegates to `runTrialsInWorktree`; exists for external callers who manage worktrees themselves
+- **Spread copy in `sampleQuickSubset`**: `[...tasks]` preserves object references — test assertions can use `.toBe()` identity checks
+- **`quickSampleSize ?? 5`**: default of 5 when quick mode enabled but size not specified
+
+### Architecture Note
+
+```
+runEval
+  ├── runBranch(controlBranch)  ──┐
+  │     addWorktree               │  internal closure
+  │     snapshotManifest          │  (NOT runTrialsOnBranch)
+  │     runTrialsInWorktree ◄─────┘
+  │     removeWorktree (finally)
+  └── runBranch(variantBranch)  (same closure, different branch)
+
+runTrialsOnBranch (exported)
+  └── runTrialsInWorktree  (shared private helper)
+```
+
+---
+
 ## Architecture
 
 ### Design Patterns
@@ -247,14 +371,15 @@ final_score             = phase_progression_score * 0.4 + grader_ensemble_score 
 
 ### Integration Points
 
-- **Used by**: eval runner (Task 13+), integration tests
+- **Used by**: `refinement/` module (A/B eval orchestration), integration tests
 - **Uses**: `@/telemetry/schemas.ts` (GoldenDatasetTaskSchema, GoldenDatasetTask type), `@/telemetry/collector.ts` (CollectorError)
 - **Data source**: `airefinement/datasets/golden-v1.jsonl` (and future versions)
-- **No circular dependencies**: `eval/` depends on `telemetry/`, never the reverse
-- **graders/deterministic.ts**: leaf module — only imports Node.js built-ins (`node:child_process`, `node:fs/promises`, `node:path`); no circular deps; consumed by Task 15 (composite.ts) and Task 16 (runner.ts)
-- **graders/llm-judge.ts**: imports `GraderResult` from `@/eval/graders/deterministic.js` and `runClaude` from `@/utils/claude-cli.js`; no circular deps; consumed by Task 15 (composite.ts)
-- **graders/calibration.ts**: leaf module — zero project imports (pure computation); no circular deps; independent of `llm-judge.ts`; consumed by Task 15 (composite.ts) and Task 16 (runner.ts)
-- **graders/composite.ts**: pure aggregation leaf — imports `GraderResult` from `deterministic.ts`; synchronous; consumed by Task 16 (runner.ts); does NOT call any grader functions directly
+- **No circular dependencies**: `eval/` depends on `telemetry/` and `utils/`, never the reverse
+- **graders/deterministic.ts**: leaf module — only imports Node.js built-ins (`node:child_process`, `node:fs/promises`, `node:path`); no circular deps; consumed by composite.ts
+- **graders/llm-judge.ts**: imports `GraderResult` from `@/eval/graders/deterministic.js` and `runClaude` from `@/utils/claude-cli.js`; no circular deps; consumed by composite.ts
+- **graders/calibration.ts**: leaf module — zero project imports (pure computation); no circular deps; independent of `llm-judge.ts`
+- **graders/composite.ts**: pure aggregation leaf — imports `GraderResult` from `deterministic.ts`; synchronous; consumed by `runner.ts`; does NOT call any grader functions directly
+- **runner.ts**: top-level orchestrator — imports `loadGoldenDataset` (dataset-reader), `gradeComposite` (composite), `addWorktree`/`removeWorktree` (utils/git), `runClaude` (utils/claude-cli), `hashFiles` (utils/git); exported by `runner.ts`: `aggregateTrialResults`, `buildTaskComparisons`, `makeDecision`, `snapshotManifest`, `runTrialsOnBranch`, `sampleQuickSubset`, `runEval`
 - **violations.jsonl path**: hardcoded as `artifacts/traces/violations.jsonl` relative to `workingDirectory`
 
 ### Error Handling
@@ -294,6 +419,9 @@ final_score             = phase_progression_score * 0.4 + grader_ensemble_score 
   - `graders/llm-judge.test.ts` (14 tests) — covers success path, markdown JSON extraction, `runClaude` configs, 3 graceful degradation scenarios (readFile failure, runClaude throw, non-zero exit), parseError path
   - `graders/calibration.test.ts` (17 tests) — perfect correlation, inverse, strong (0.9), weak (0.5), boundary (0.8), tied ranks (average), n=2 edge case, validation guards (n<2, length mismatch)
   - `graders/composite.test.ts` (23 tests) — weight validation, ensemble scoring, missing keys fallback, phasesTotal=0 guard, pass threshold, partial credit breakdown (Task 15.1: 13 tests); partial credit formula: 0/6→0.0, 6/6→1.0, 3/6 no ensemble→0.20, 0/6 full ensemble→0.60, overflow clamp, underflow clamp, phasesTotal=0, overall_score consistency (Task 15.2: +10 tests)
+  - `runner.test.ts` (30 tests) — aggregateTrialResults (grouping, mean/min/max, pass_rate), buildTaskComparisons (join, delta, missing-side), makeDecision (use_variant, keep_control, inconclusive threshold)
+  - `runner-isolation.test.ts` (15 tests) — snapshotManifest (ENOENT graceful, dir hashing, settings.json, VersionManifest shape), runTrialsOnBranch (worktree lifecycle, task×trial iteration, cleanup on error, TaskTrialResult shape)
+  - `runner-quick.test.ts` (17 tests) — sampleQuickSubset (Fisher-Yates distribution, count boundary, object identity), runEval (full protocol, quick mode sampling, dataset filtering by taskIds, ExperimentResult shape)
 
 ### Integration Tests
 
@@ -410,6 +538,47 @@ console.log(result.calibrated);           // true (rho >= 0.80)
 console.log(result.sample_size);          // 3
 ```
 
+## Usage Examples
+
+### Run full A/B experiment
+
+```typescript
+import { runEval, type EvalRunConfig } from '@/eval/runner.js';
+import type { CompositeConfig } from '@/eval/graders/composite.js';
+
+const graderConfig: CompositeConfig = {
+  test_runner: 0.30, static_analysis: 0.15, test_mutation: 0.15,
+  guard_compliance: 0.10, llm_test_quality: 0.10,
+  llm_impl_minimality: 0.10, llm_doc_completeness: 0.10,
+};
+
+const result = await runEval({
+  datasetPath: 'datasets/golden-v1.jsonl',
+  trials: 3,
+  hypothesis: 'New prompt reduces test mutation rate',
+  variantDescription: 'prompt-v2',
+  controlBranch: 'main',
+  variantBranch: 'experiment/prompt-v2',
+  graderConfig,
+  timeout: 120_000,
+  quick: true,         // sample 5 tasks instead of full dataset
+  quickSampleSize: 5,
+});
+
+console.log(result.decision);  // 'use_variant' | 'keep_control' | 'inconclusive'
+console.log(result.rationale); // human-readable explanation
+```
+
+### Sample quick subset
+
+```typescript
+import { sampleQuickSubset } from '@/eval/runner.js';
+import { loadGoldenDataset } from '@/eval/dataset-reader.js';
+
+const allTasks = loadGoldenDataset('datasets/golden-v1.jsonl');
+const sample = sampleQuickSubset(allTasks, 5); // Fisher-Yates, reproducible by seed (future work)
+```
+
 ## Related Tasks
 
 - Task 2: Telemetry Schemas — defines `GoldenDatasetTask` type and `GoldenDatasetTaskSchema`
@@ -420,9 +589,52 @@ console.log(result.sample_size);          // 3
 - Task 14.3: Calibration — implemented `graders/calibration.ts` with Spearman ρ calibration
 - Task 15.1: Composite Grader (Weighted Ensemble) — implemented `graders/composite.ts` with `gradeComposite` aggregation function
 - Task 15.2: Phase Progression Blend — updated `final_score` to `phase_progression * 0.4 + ensemble * 0.6` with clamping
-- Task 16: Eval Runner — will orchestrate all graders via `eval/runner.ts`
+- Task 16.1: Eval Runner (Pure Logic) — pure aggregation: `aggregateTrialResults`, `buildTaskComparisons`, `makeDecision`
+- Task 16.2: Eval Runner (Isolation) — environment isolation: `snapshotManifest`, `runTrialsOnBranch`, git worktree helpers
+- Task 16.3: Eval Runner (Quick Mode + Orchestrator) — `sampleQuickSubset`, `runEval` full 8-step A/B protocol
 
 ## Changelog
+
+### 2026-02-26 — Task 16.3: Eval Runner — Quick Mode + runEval Orchestrator
+
+Completed `runner.ts` with quick-mode sampling and full A/B experiment orchestration:
+
+**airefinement/src/eval/runner.ts (new):**
+- Added `sampleQuickSubset(tasks, count): GoldenDatasetTask[]` — Fisher-Yates shuffle on spread copy; preserves object references
+- Added `runEval(config): Promise<ExperimentResult>` — full 8-step A/B protocol: load dataset → filter → quick-sample → run control → run variant → aggregate × 2 → compare → decide
+- Added private `runTrialsInWorktree(worktreePath, tasks, config)` — shared trial loop used by both `runTrialsOnBranch` and `runEval`'s internal `runBranch` closure
+- **Key design**: `runEval` uses internal `runBranch` closure (not `runTrialsOnBranch`) so that `snapshotManifest` is called while worktree exists; `runTrialsOnBranch` remains exported for external callers
+
+**Unit tests (17 tests):**
+- `tests/unit/eval/runner-quick.test.ts` — sampleQuickSubset (Fisher-Yates, count boundary, object identity), runEval (full protocol, quick mode, taskIds filter, ExperimentResult shape)
+
+**Total unit tests for Task 16: 70** (runner.test.ts: 30, runner-isolation.test.ts: 15, git-worktree.test.ts: 8, runner-quick.test.ts: 17)
+
+### 2026-02-26 — Task 16.2: Eval Runner — Snapshot & Trial Execution
+
+Added `runner.ts` (eval module) and expanded `utils/git.ts`:
+
+**airefinement/src/eval/runner.ts:**
+- Updated `EvalRunConfig` with new fields: `controlBranch`, `variantBranch`, `graderConfig: CompositeConfig`, `timeout: number`
+- Added `snapshotManifest(worktreePath, datasetVersion): Promise<VersionManifest>`
+  - Internal `collectFiles(dirPath)`: recursive readdir, returns `[]` on ENOENT (graceful for missing dirs)
+  - Hashes `.claude/agents/`, `.claude/skills/`, `.claude/hooks/` via `collectFiles + hashFiles`
+  - Hashes `.claude/settings.json` directly
+  - Returns `VersionManifest` with `dataset_version`
+- Added `runTrialsOnBranch(tasks, branch, config, worktreeBasePath): Promise<TaskTrialResult[]>`
+  - Derives worktree path: `join(worktreeBasePath, safeBranch)` where safeBranch replaces `/` → `-`
+  - Creates git worktree via `addWorktree`, cleans up in `finally` (even on error)
+  - Iterates tasks × `config.trials`: calls `runClaude` per iteration
+  - Grades via `gradeComposite` (TODO: uses empty GraderResult placeholder — real grader calls in later subtasks)
+  - Returns `TaskTrialResult[]`: `{ task_id, trial, composite_result, duration_ms, claude_exit_code }`
+
+**airefinement/src/utils/git.ts:**
+- Added `addWorktree(path, branch): Promise<void>` — runs `git worktree add <path> <branch>`
+- Added `removeWorktree(path): Promise<void>` — runs `git worktree remove <path> --force`
+
+**Unit tests (23 tests):**
+- `tests/unit/utils/git-worktree.test.ts` (8 tests) — correct git commands, error propagation
+- `tests/unit/eval/runner-isolation.test.ts` (15 tests) — snapshotManifest (ENOENT graceful, dir hashing, settings.json, VersionManifest shape), runTrialsOnBranch (worktree lifecycle, task×trial iteration, cleanup on error, TaskTrialResult shape)
 
 ### 2026-02-26 — Task 15.2: Partial Credit Formula
 

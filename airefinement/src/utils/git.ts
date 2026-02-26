@@ -57,3 +57,11 @@ export async function stash(): Promise<void> {
 export async function stashPop(): Promise<void> {
   await execGit(['stash', 'pop']);
 }
+
+export async function addWorktree(path: string, branch: string): Promise<void> {
+  await execGit(['worktree', 'add', path, branch]);
+}
+
+export async function removeWorktree(path: string): Promise<void> {
+  await execGit(['worktree', 'remove', path, '--force']);
+}
