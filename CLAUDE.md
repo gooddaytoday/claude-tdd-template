@@ -111,9 +111,10 @@ The TDD Integration Skill uses a modular architecture:
 
 This section is for project-specific module documentation. Create CLAUDE.md files in your modules and link them here.
 
+- [CLI Entry Point](airefinement/bin/CLAUDE.md) - Commander-based CLI with 5 commands (analyze, refine, eval, report, metrics)
+- [Eval Module](airefinement/src/eval/CLAUDE.md) - Golden Dataset reader, eval infrastructure, deterministic graders, LLM-judge grader, Spearman calibration, composite grader, A/B eval runner, result comparator, and markdown reporter with history: loadGoldenDataset, gradeTestRunner, gradeComposite, runEval, buildComparisonReport, formatMarkdownReport, saveReport, loadExperimentHistory, formatHistoryTable
 - [Metrics Module](airefinement/src/metrics/CLAUDE.md) - Metrics evaluation and threshold comparison
 - [Refinement Module](airefinement/src/refinement/CLAUDE.md) - AI self-improvement loop: diagnosis prompt building, experiment branch management, scope-restricted Claude CLI invocation
-- [Eval Module](airefinement/src/eval/CLAUDE.md) - Golden Dataset reader, eval infrastructure, deterministic graders, LLM-judge grader, Spearman calibration, composite grader, A/B eval runner, result comparator, and markdown reporter with history: loadGoldenDataset, gradeTestRunner, gradeComposite, runEval, buildComparisonReport, formatMarkdownReport, saveReport, loadExperimentHistory, formatHistoryTable
 
 <!-- Example structure:
 - [Services Module](src/services/CLAUDE.md) - Business logic services

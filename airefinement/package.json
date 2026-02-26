@@ -9,7 +9,8 @@
     "analyze": "tsx bin/cli.ts analyze",
     "refine": "tsx bin/cli.ts refine",
     "eval": "tsx bin/cli.ts eval",
-    "report": "tsx bin/cli.ts report"
+    "report": "tsx bin/cli.ts report",
+    "metrics": "tsx bin/cli.ts metrics"
   },
   "keywords": [],
   "author": "",
