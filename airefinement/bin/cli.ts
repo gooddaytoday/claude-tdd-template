@@ -133,9 +133,10 @@ program
   .description('Show experiment evaluation reports')
   .option('--history', 'Show history table of all experiments')
   .option('--format <format>', 'Output format: json or md')
-  .action((opts: { history?: boolean; format?: string }) => {
+  .option('--reports-dir <path>', 'Reports directory', 'artifacts/reports')
+  .action((opts: { history?: boolean; format?: string; reportsDir: string }) => {
     try {
-      const history = loadExperimentHistory('artifacts/reports');
+      const history = loadExperimentHistory(opts.reportsDir);
 
       if (opts.history) {
         console.log(formatHistoryTable(history));

@@ -1,12 +1,11 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ZodError } from 'zod';
 import {
   RunReportSchema,
   TraceEventSchema,
   ExperimentResultSchema,
 } from '@/telemetry/schemas.js';
-import type { AggregatedMetrics, RunReport, TraceEvent } from '@/telemetry/schemas.js';
+import type { AggregatedMetrics, ExperimentResult, RunReport, TraceEvent } from '@/telemetry/schemas.js';
 
 export class CollectorError extends Error {
   public readonly causeDetail?: unknown;
@@ -19,9 +18,6 @@ export class CollectorError extends Error {
 }
 
 function wrapParseError(context: string, error: unknown): never {
-  if (error instanceof ZodError) {
-    throw new CollectorError(`Invalid schema in ${context}`, error.issues);
-  }
   if (error instanceof Error) {
     throw new CollectorError(`Failed to parse ${context}`, error.message);
   }
@@ -30,14 +26,20 @@ function wrapParseError(context: string, error: unknown): never {
 
 export function readRunReports(dir: string): RunReport[] {
   const files = readdirSync(dir).filter((f) => f.endsWith('.json'));
-  const reports = files.map((f) => {
+  const reports: RunReport[] = [];
+
+  for (const f of files) {
     try {
       const raw = JSON.parse(readFileSync(join(dir, f), 'utf-8'));
-      return RunReportSchema.parse(raw);
+      const parsed = RunReportSchema.safeParse(raw);
+      if (parsed.success) {
+        reports.push(parsed.data);
+      }
     } catch (error) {
       wrapParseError(f, error);
     }
-  });
+  }
+
   return reports.sort(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
   );
@@ -64,14 +66,23 @@ export function getLatestBaseline(dir: string): AggregatedMetrics | null {
   const files = readdirSync(dir).filter((f) => f.endsWith('.json'));
   if (files.length === 0) return null;
 
-  const experiments = files.map((f) => {
+  const experiments: ExperimentResult[] = [];
+
+  for (const f of files) {
     try {
       const raw = JSON.parse(readFileSync(join(dir, f), 'utf-8'));
-      return ExperimentResultSchema.parse(raw);
+      const parsed = ExperimentResultSchema.safeParse(raw);
+      if (parsed.success) {
+        experiments.push(parsed.data);
+      }
     } catch (error) {
       wrapParseError(f, error);
     }
-  });
+  }
+
+  if (experiments.length === 0) {
+    return null;
+  }
 
   experiments.sort(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),

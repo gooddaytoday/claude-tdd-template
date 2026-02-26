@@ -1,0 +1,2 @@
+{"timestamp":"2026-02-20T08:45:00.000Z","agent":"tdd-implementer","attempted_action":"edit test file","target_file":"tests/unit/cli/cli.test.ts","blocked":true,"reason":"Guard blocked test modification"}
+{"timestamp":"2026-02-21T10:20:00.000Z","agent":"tdd-refactorer","attempted_action":"modify guarded test","target_file":"tests/integration/pipeline/e2e-pipeline.test.ts","blocked":true,"reason":"Guard blocked test modification"}

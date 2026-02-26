@@ -1,0 +1,3 @@
+{"timestamp":"2026-02-20T08:35:00.000Z","agent":"tdd-test-writer","phase":"RED","started_at":"2026-02-20T08:30:00.000Z","finished_at":"2026-02-20T08:35:00.000Z","tool_calls_count":9}
+{"timestamp":"2026-02-21T10:16:00.000Z","agent":"tdd-implementer","phase":"GREEN","started_at":"2026-02-21T10:10:00.000Z","finished_at":"2026-02-21T10:16:00.000Z","tool_calls_count":18}
+{"timestamp":"2026-02-22T12:05:00.000Z","agent":"tdd-documenter","phase":"DOCS","started_at":"2026-02-22T12:00:00.000Z","finished_at":"2026-02-22T12:05:00.000Z","tool_calls_count":7}

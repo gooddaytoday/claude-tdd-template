@@ -359,6 +359,15 @@ describe('report command', () => {
     expect(output).toContain('=== HISTORY TABLE ===');
   });
 
+  it('should pass --reports-dir path to loadExperimentHistory', async () => {
+    mockLoadExperimentHistory.mockReturnValue([]);
+    mockFormatHistoryTable.mockReturnValue('History Table');
+
+    await program.parseAsync(['node', 'cli', 'report', '--history', '--reports-dir', '/tmp/reports']);
+
+    expect(mockLoadExperimentHistory).toHaveBeenCalledWith('/tmp/reports');
+  });
+
   it('should print latest report to stdout when no flags are passed', async () => {
     const latestExperiment = { experiment_id: 'exp-latest', decision: 'accept' };
     mockLoadExperimentHistory.mockReturnValue([latestExperiment]);

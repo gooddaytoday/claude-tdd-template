@@ -145,6 +145,24 @@ describe('readRunReports', () => {
     expect(result).toHaveLength(3);
     expect(result.map((r) => r.run_id)).toEqual(['newest', 'mid', 'oldest']);
   });
+
+  it('ignores JSON files that match other schemas and still returns valid RunReport entries', () => {
+    const runReport = makeRunReport({
+      run_id: 'run-only',
+      timestamp: '2026-02-21T18:00:00.000Z',
+    });
+    const experiment = makeExperimentResult({
+      experiment_id: 'exp-mixed',
+      timestamp: '2026-02-22T14:00:00.000Z',
+    });
+
+    writeFileSync(join(tempDir, 'run.json'), JSON.stringify(runReport));
+    writeFileSync(join(tempDir, 'experiment.json'), JSON.stringify(experiment));
+
+    expect(() => readRunReports(tempDir)).not.toThrow();
+    expect(readRunReports(tempDir)).toHaveLength(1);
+    expect(readRunReports(tempDir)[0].run_id).toBe('run-only');
+  });
 });
 
 describe('readTraceEvents', () => {
@@ -260,5 +278,30 @@ describe('getLatestBaseline', () => {
     const result = getLatestBaseline(tempDir);
 
     expect(result).toEqual(metrics);
+  });
+
+  it('ignores non-experiment JSON files and returns latest experiment baseline', () => {
+    const runReport = makeRunReport({
+      run_id: 'run-noise',
+      timestamp: '2026-02-23T00:00:00.000Z',
+    });
+    const experiment = makeExperimentResult({
+      experiment_id: 'exp-baseline',
+      timestamp: '2026-02-22T00:00:00.000Z',
+      control_results: makeAggregatedMetrics({ tsr: 0.91 }),
+    });
+
+    writeFileSync(join(tempDir, 'run-noise.json'), JSON.stringify(runReport));
+    writeFileSync(join(tempDir, 'experiment.json'), JSON.stringify(experiment));
+
+    expect(() => getLatestBaseline(tempDir)).not.toThrow();
+    expect(getLatestBaseline(tempDir)?.tsr).toBe(0.91);
+  });
+
+  it('returns null when there are JSON files but none match ExperimentResult schema', () => {
+    writeFileSync(join(tempDir, 'run-only.json'), JSON.stringify(makeRunReport()));
+
+    expect(() => getLatestBaseline(tempDir)).not.toThrow();
+    expect(getLatestBaseline(tempDir)).toBeNull();
   });
 });
