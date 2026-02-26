@@ -1096,7 +1096,7 @@ For bias reduction (from Perplexity research):
 
 ---
 
-## Task 15 -- Composite Grader & Partial Credit
+## [DONE] Task 15 -- Composite Grader & Partial Credit
 
 **Goal**: Weighted ensemble of graders with partial credit scoring.
 

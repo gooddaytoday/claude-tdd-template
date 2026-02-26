@@ -16,7 +16,7 @@ Created the dataset reader foundation for eval pipeline.
 - `graders/deterministic.ts` — 4 deterministic graders for scoring TDD pipeline runs (Task 13)
 - `graders/llm-judge.ts` — LLM-based grader via Claude CLI with rubric files (Task 14.2)
 - `graders/calibration.ts` — Spearman correlation calibration between human and LLM scores (Task 14.3)
-- `graders/` — composite graders (Task 15+)
+- `graders/composite.ts` — weighted ensemble of 7 graders with partial credit scoring (Tasks 15.1–15.2)
 
 ### Functions
 
@@ -153,6 +153,87 @@ Implemented Spearman correlation calibration in `graders/calibration.ts`. Pure c
 
 ---
 
+## Implementation Details
+
+### Phase: Task 15.1 — Composite Grader (Weighted Ensemble)
+
+Implemented weighted ensemble aggregation in `graders/composite.ts`. Pure aggregation module — no I/O, no external deps; consumes results from other graders.
+
+### Exported Interfaces
+
+- `CompositeConfig` — weights for 7 graders: `{ test_runner: 0.30, static_analysis: 0.15, test_mutation: 0.15, guard_compliance: 0.10, llm_test_quality: 0.10, llm_impl_minimality: 0.10, llm_doc_completeness: 0.10 }`
+- `CompositeInput` — `{ config: CompositeConfig, results: Record<string, GraderResult>, phasesCompleted: number, phasesTotal: number }`
+- `PartialCreditBreakdown` — `{ phases_completed, phases_total, phase_progression_score, grader_ensemble_score, final_score }`
+- `CompositeResult` — `{ overall_score, pass, individual_scores, partial_credit }`
+
+### Exported Function
+
+#### `gradeComposite(input: CompositeInput): CompositeResult`
+- Weight validation: throws `Error` if `Math.abs(sum - 1.0) > 0.01`
+- `grader_ensemble_score = Σ (weight_key * (results[key]?.score ?? 0))` over all 7 config keys
+- Missing result key → treated as `score: 0` (graceful)
+- `phase_progression_score = phasesCompleted / phasesTotal` (0 if `phasesTotal === 0`)
+- `final_score = phase_progression_score * 0.4 + grader_ensemble_score * 0.6` (updated in Task 15.2)
+- `pass = overall_score >= 0.5`
+- grader tag: `'CompositeGrader'`
+
+### Error Handling
+
+- `Math.abs(weightSum - 1.0) > 0.01` → `Error('Weights must sum to 1.0, got N')`
+- Missing grader key in `results` → graceful fallback to `score: 0` (no throw)
+
+### Key Design Decisions
+
+- **Pure aggregation**: `composite.ts` does NOT call any graders — receives pre-computed `GraderResult` map
+- **Synchronous**: no I/O, no async — designed for use by Task 16 orchestrator
+- **`phasesTotal === 0` guard**: returns `phase_progression_score: 0` instead of NaN
+
+---
+
+## Implementation Details
+
+### Phase: Task 15.2 — Partial Credit Formula
+
+Replaced placeholder `final_score` in `graders/composite.ts` with actual phase-progression blend formula.
+
+### Changes from Task 15.1
+
+#### `gradeComposite` — updated logic
+
+- **`phase_progression_score`**: added `Math.max(0, Math.min(1, ...))` clamping around `phasesCompleted / phasesTotal`
+  - `phasesTotal === 0` → `0` (unchanged guard)
+  - `phasesCompleted > phasesTotal` → clamped to `1.0` (overflow protection)
+  - `phasesCompleted < 0` → clamped to `0.0` (negative protection)
+- **`final_score`**: replaced `grader_ensemble_score` placeholder with `phase_progression_score * 0.4 + grader_ensemble_score * 0.6`
+- **`overall_score`**: now equals `final_score` (previously was `grader_ensemble_score`)
+- **`pass`**: now `final_score >= 0.5` (previously `grader_ensemble_score >= 0.5`)
+
+### Scoring Formula
+
+```
+phase_progression_score = clamp(phasesCompleted / phasesTotal, 0, 1)   // 0 if phasesTotal=0
+grader_ensemble_score   = Σ weight_k * score_k                          // weighted sum over 7 graders
+final_score             = phase_progression_score * 0.4 + grader_ensemble_score * 0.6
+```
+
+### Key Behavioral Examples
+
+| phasesCompleted | phasesTotal | ensemble | final_score |
+|---|---|---|---|
+| 0 | 6 | 0.0 | 0.0 |
+| 6 | 6 | 1.0 | 1.0 |
+| 3 | 6 | 0.0 | 0.20 |
+| 0 | 6 | 1.0 | 0.60 |
+| 0 | 0 | any | `ensemble * 0.6` |
+
+### Key Design Decisions
+
+- **40/60 split**: phase progression bonus (40%) encourages pipeline completion; grader quality (60%) remains dominant
+- **Clamping**: `Math.max(0, Math.min(1, ...))` prevents negative/overflow values from corrupting score
+- **`phasesTotal === 0` short-circuits before clamping**: avoids `0/0 = NaN` entering `Math.max`
+
+---
+
 ## Architecture
 
 ### Design Patterns
@@ -173,6 +254,7 @@ Implemented Spearman correlation calibration in `graders/calibration.ts`. Pure c
 - **graders/deterministic.ts**: leaf module — only imports Node.js built-ins (`node:child_process`, `node:fs/promises`, `node:path`); no circular deps; consumed by Task 15 (composite.ts) and Task 16 (runner.ts)
 - **graders/llm-judge.ts**: imports `GraderResult` from `@/eval/graders/deterministic.js` and `runClaude` from `@/utils/claude-cli.js`; no circular deps; consumed by Task 15 (composite.ts)
 - **graders/calibration.ts**: leaf module — zero project imports (pure computation); no circular deps; independent of `llm-judge.ts`; consumed by Task 15 (composite.ts) and Task 16 (runner.ts)
+- **graders/composite.ts**: pure aggregation leaf — imports `GraderResult` from `deterministic.ts`; synchronous; consumed by Task 16 (runner.ts); does NOT call any grader functions directly
 - **violations.jsonl path**: hardcoded as `artifacts/traces/violations.jsonl` relative to `workingDirectory`
 
 ### Error Handling
@@ -211,6 +293,7 @@ Implemented Spearman correlation calibration in `graders/calibration.ts`. Pure c
   - `graders/deterministic.test.ts` (23 tests) — covers all 4 graders; uses `jest.unstable_mockModule` for ESM-compatible mocking of `node:child_process` and `node:fs/promises`
   - `graders/llm-judge.test.ts` (14 tests) — covers success path, markdown JSON extraction, `runClaude` configs, 3 graceful degradation scenarios (readFile failure, runClaude throw, non-zero exit), parseError path
   - `graders/calibration.test.ts` (17 tests) — perfect correlation, inverse, strong (0.9), weak (0.5), boundary (0.8), tied ranks (average), n=2 edge case, validation guards (n<2, length mismatch)
+  - `graders/composite.test.ts` (23 tests) — weight validation, ensemble scoring, missing keys fallback, phasesTotal=0 guard, pass threshold, partial credit breakdown (Task 15.1: 13 tests); partial credit formula: 0/6→0.0, 6/6→1.0, 3/6 no ensemble→0.20, 0/6 full ensemble→0.60, overflow clamp, underflow clamp, phasesTotal=0, overall_score consistency (Task 15.2: +10 tests)
 
 ### Integration Tests
 
@@ -335,10 +418,32 @@ console.log(result.sample_size);          // 3
 - Task 14.1: Rubric Files — markdown rubric files in `config/rubrics/` consumed by llm-judge
 - Task 14.2: LLM-Judge Grader — implemented `graders/llm-judge.ts`
 - Task 14.3: Calibration — implemented `graders/calibration.ts` with Spearman ρ calibration
-- Task 15: Composite Grader — will consume deterministic + LLM graders in `graders/composite.ts`
+- Task 15.1: Composite Grader (Weighted Ensemble) — implemented `graders/composite.ts` with `gradeComposite` aggregation function
+- Task 15.2: Phase Progression Blend — updated `final_score` to `phase_progression * 0.4 + ensemble * 0.6` with clamping
 - Task 16: Eval Runner — will orchestrate all graders via `eval/runner.ts`
 
 ## Changelog
+
+### 2026-02-26 — Task 15.2: Partial Credit Formula
+
+- Updated `src/eval/graders/composite.ts` — replaced placeholder `final_score` with actual phase-progression blend
+- `phase_progression_score` now clamped via `Math.max(0, Math.min(1, ...))` (overflow and negative protection)
+- `final_score = phase_progression_score * 0.4 + grader_ensemble_score * 0.6` (was `grader_ensemble_score`)
+- `overall_score` and `pass` now derived from `final_score` (not `grader_ensemble_score`)
+- Unit tests: `tests/unit/eval/graders/composite.test.ts` (+10 tests → 23 total)
+- Test coverage: 0/6 phases, 6/6 phases, partial-phase scenarios, overflow/underflow clamp, phasesTotal=0, overall_score consistency
+
+### 2026-02-26 — Task 15.1: Composite Grader (Weighted Ensemble)
+
+- Created `src/eval/graders/composite.ts` — pure synchronous aggregation, no I/O, no grader calls
+- Exported interfaces: `CompositeConfig`, `CompositeInput`, `PartialCreditBreakdown`, `CompositeResult`
+- Exported function: `gradeComposite(input: CompositeInput): CompositeResult`
+- Default weights: test_runner=0.30, static_analysis=0.15, test_mutation=0.15, guard_compliance=0.10, llm_test_quality=0.10, llm_impl_minimality=0.10, llm_doc_completeness=0.10
+- Weight validation: throws if `|sum - 1.0| > 0.01`
+- Missing grader keys → graceful `score: 0` fallback (no throw)
+- `phase_progression_score = phasesCompleted / phasesTotal` with `phasesTotal=0` guard
+- `final_score = grader_ensemble_score` (placeholder; Task 15.2 will change to 40/60 blend)
+- Unit tests: `tests/unit/eval/graders/composite.test.ts` (13 tests)
 
 ### 2026-02-25 — Task 14.3: Calibration
 
