@@ -1213,7 +1213,7 @@ Before running full dataset, offer a `--quick` mode:
 
 ---
 
-## Task 17 -- Result Comparator & Reporting
+## [DONE] Task 17 -- Result Comparator & Reporting
 
 **Goal**: Side-by-side comparison of experiment results and human-readable reporting.
 

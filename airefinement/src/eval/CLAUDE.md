@@ -18,6 +18,8 @@ Created the dataset reader foundation for eval pipeline.
 - `graders/calibration.ts` — Spearman correlation calibration between human and LLM scores (Task 14.3)
 - `graders/composite.ts` — weighted ensemble of 7 graders with partial credit scoring (Tasks 15.1–15.2)
 - `runner.ts` — A/B eval orchestrator: full 8-step A/B experiment protocol, sampleQuickSubset, runEval (Tasks 16.1–16.3)
+- `comparator.ts` — side-by-side comparison of experiment results: deltas, task classification, net assessment (Task 17.1)
+- `reporter.ts` — markdown report formatter, file writer, experiment history reader and table formatter (Tasks 17.2, 17.3)
 
 ### Functions
 
@@ -358,6 +360,122 @@ runTrialsOnBranch (exported)
 
 ---
 
+## Implementation Details
+
+### Phase: Task 17.1 — Result Comparator
+
+Implemented `comparator.ts` — pure function for side-by-side comparison of A/B experiment results.
+
+### Exported Interface
+
+- `ComparisonReport` — `{ experiment_id, control_metrics, variant_metrics, deltas: Record<string,number>, regressions, improvements, unchanged, net_assessment: string }`
+
+### Exported Function
+
+#### `buildComparisonReport(result: ExperimentResult): ComparisonReport`
+- **deltas**: iterates 8 hardcoded `AggregatedMetrics` keys (`tsr`, `pass_at_1`, `pass_3`, `code_quality_score`, `total_tokens`, `median_cycle_time`, `gate_failure_rate`, `guard_violations`); computes `variant[key] - control[key]` for each
+- **regressions**: `per_task_comparison.filter(t => t.regression)`
+- **improvements**: `per_task_comparison.filter(t => !t.regression && t.delta > 0)`
+- **unchanged**: `per_task_comparison.filter(t => !t.regression && t.delta <= 0)` — includes zero and negative non-regression deltas
+- **net_assessment**: `"${result.decision.toUpperCase()}: ${result.decision_rationale}"`
+- Pure function: no I/O, no side effects
+- Leaf module: imports only type definitions from `@/telemetry/schemas.js`
+
+### Key Design Decisions
+
+- **Hardcoded 8-key array**: explicit over computed — prevents silent omission when `AggregatedMetrics` schema changes; if a new key is added to the schema, `metricKeys` must be updated manually
+- **`regression` flag is authoritative**: tasks with negative `delta` but `regression === false` go to `unchanged`, not `regressions`
+- **`net_assessment` is human-readable string**: `decision` field on `ExperimentResult` remains the machine-readable authority
+
+---
+
+## Implementation Details
+
+### Phase: Task 17.2 — Reporter (formatMarkdownReport + saveReport)
+
+Implemented `reporter.ts` — markdown report formatter and async file writer for experiment results.
+
+### Exported Functions
+
+#### `formatMarkdownReport(result: ExperimentResult, report: ComparisonReport): string`
+- Pure function, no I/O
+- Produces markdown with 6 sections:
+  1. `# Experiment Report: <experiment_id>`
+  2. `## Hypothesis` — `result.hypothesis`
+  3. `## Results Summary` — markdown table iterating `Object.keys(report.deltas)` (8 rows); columns: Metric | Control | Variant | Delta | Status
+  4. `## Regressions (N tasks)` — via `formatTaskSection`
+  5. `## Improvements (N tasks)` — via `formatTaskSection`
+  6. `## Decision: <DECISION>` + `result.decision_rationale`
+
+#### `saveReport(result: ExperimentResult, report: ComparisonReport, reportsDir: string): Promise<{jsonPath, mdPath}>`
+- `mkdir(reportsDir, { recursive: true })` — idempotent directory creation
+- Writes `<experiment_id>.json` (JSON with 2-space indent)
+- Writes `<experiment_id>.md` (output of `formatMarkdownReport`)
+- Returns `{ jsonPath, mdPath }` — absolute paths under `reportsDir`
+
+### Private Helpers
+
+- `formatDelta(delta: number): string` — sign-prefixed 2-decimal string: `"+0.05"`, `"-0.05"`, `"+0.00"`
+- `deltaStatus(delta: number): string` — `"Better"` / `"Worse"` / `"Same"` (strictly positive/negative/zero)
+- `formatTaskSection(title, tasks): string[]` — emits `## <title> (N tasks)` header + one bullet per task with `task_id`, `control_score`, `variant_score`, `delta`
+
+### Imports
+
+- `node:path` (`join`), `node:fs/promises` (`mkdir`, `writeFile`)
+- `@/telemetry/schemas.js` — `ExperimentResult`, `TaskComparison` (type-only)
+- `@/eval/comparator.js` — `ComparisonReport` (type-only)
+- Leaf module: zero runtime project imports, no circular deps
+
+### Key Design Decisions
+
+- **Pure/async separation**: `formatMarkdownReport` is synchronous/pure; `saveReport` owns all I/O — clear testability boundary
+- **`Object.keys(report.deltas)` for table rows**: order follows key insertion order in `ComparisonReport.deltas` (set by `comparator.ts` `metricKeys` array — 8 keys)
+- **`mkdir recursive: true`**: idempotent — safe to call even if directory already exists
+- **`jest.unstable_mockModule`**: required for ESM-compatible mocking of `node:fs/promises` in tests
+
+---
+
+## Implementation Details
+
+### Phase: Task 17.3 — Reporter Extension (loadExperimentHistory + formatHistoryTable) + CLI
+
+Extended `reporter.ts` with experiment history functions and wired to `bin/cli.ts` as `airefinement report --history`.
+
+### New Exported Functions in reporter.ts
+
+#### `loadExperimentHistory(reportsDir: string): ExperimentResult[]`
+- Uses `readdirSync` + `readFileSync` from `node:fs` (synchronous, intentional — batch read before display; matches `loadGoldenDataset` pattern)
+- Filters `readdirSync` output to `*.json` files only
+- For each file:
+  - `JSON.parse` in try/catch → throws `CollectorError('Failed to parse <file>: invalid JSON', err)` on parse failure
+  - `ExperimentResultSchema.parse(raw)` in try/catch → throws `CollectorError('Invalid schema in <file>', err)` on schema validation failure
+- Sorts by `timestamp` descending: `new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()` (newest first)
+- Path construction: `join(reportsDir, file)`
+
+#### `formatHistoryTable(experiments: ExperimentResult[]): string`
+- Returns `'No experiments found'` for empty array
+- Produces markdown: `# Experiment History` title + separator + header row + data rows
+- Columns: `Date | Experiment | TSR | pass@1 | Guard Violations | Decision`
+- Date: `exp.timestamp.slice(0, 10)` → `YYYY-MM-DD`
+- TSR and pass@1: `.toFixed(2)`; Guard Violations: raw number
+- Accepted experiments (decision `=== 'accept'`) marked with ` ✓` suffix in Decision column
+
+### bin/cli.ts — `airefinement report --history` Command (new file)
+
+- Dispatches on `args[0] === 'report' && args.includes('--history')`
+- Reports dir: `join(process.cwd(), 'artifacts', 'reports')` (hardcoded relative to CWD)
+- Calls `loadExperimentHistory` → `formatHistoryTable` → `console.log`
+- Catches `CollectorError` → `console.error('Error reading reports:', err.message)` + `process.exit(1)`
+- Non-`CollectorError` errors re-thrown (unexpected errors bubble up)
+- Import: `'../src/eval/reporter.js'` (relative path — `bin/` cannot use `@/` alias)
+- Fallback when command unrecognized: prints usage hint
+
+### Integration Subtask 17.4
+
+ARCH_REVIEW created integration subtask 17.4 for `runner.ts` integration. Deferred because modifying `runner.ts` risks breaking 70 existing Task 16 tests. Tech debt tracked in `.subtask-17.4-notes.md`.
+
+---
+
 ## Architecture
 
 ### Design Patterns
@@ -380,6 +498,9 @@ runTrialsOnBranch (exported)
 - **graders/calibration.ts**: leaf module — zero project imports (pure computation); no circular deps; independent of `llm-judge.ts`
 - **graders/composite.ts**: pure aggregation leaf — imports `GraderResult` from `deterministic.ts`; synchronous; consumed by `runner.ts`; does NOT call any grader functions directly
 - **runner.ts**: top-level orchestrator — imports `loadGoldenDataset` (dataset-reader), `gradeComposite` (composite), `addWorktree`/`removeWorktree` (utils/git), `runClaude` (utils/claude-cli), `hashFiles` (utils/git); exported by `runner.ts`: `aggregateTrialResults`, `buildTaskComparisons`, `makeDecision`, `snapshotManifest`, `runTrialsOnBranch`, `sampleQuickSubset`, `runEval`
+- **comparator.ts**: leaf module — imports only `@/telemetry/schemas.js` types (zero runtime project imports); consumed by reporting layer; pure function, no I/O
+- **reporter.ts**: leaf module — imports `node:path`, `node:fs/promises` (async I/O for `saveReport`) and `node:fs` (sync I/O for `loadExperimentHistory`); type-only project imports; exports `formatMarkdownReport`, `saveReport`, `loadExperimentHistory`, `formatHistoryTable`; consumed by `refinement/` orchestration and `bin/cli.ts`
+- **bin/cli.ts**: CLI entry point — dispatches `airefinement report --history` → `loadExperimentHistory` + `formatHistoryTable`; uses relative imports (not `@/` alias)
 - **violations.jsonl path**: hardcoded as `artifacts/traces/violations.jsonl` relative to `workingDirectory`
 
 ### Error Handling
@@ -422,6 +543,9 @@ runTrialsOnBranch (exported)
   - `runner.test.ts` (30 tests) — aggregateTrialResults (grouping, mean/min/max, pass_rate), buildTaskComparisons (join, delta, missing-side), makeDecision (use_variant, keep_control, inconclusive threshold)
   - `runner-isolation.test.ts` (15 tests) — snapshotManifest (ENOENT graceful, dir hashing, settings.json, VersionManifest shape), runTrialsOnBranch (worktree lifecycle, task×trial iteration, cleanup on error, TaskTrialResult shape)
   - `runner-quick.test.ts` (17 tests) — sampleQuickSubset (Fisher-Yates distribution, count boundary, object identity), runEval (full protocol, quick mode sampling, dataset filtering by taskIds, ExperimentResult shape)
+  - `comparator.test.ts` (17 tests) — buildComparisonReport: basic structure passthrough (3), 8-key deltas computation (3), task classification into regressions/improvements/unchanged (7), net_assessment for all 3 decision types + rationale content (4)
+  - `reporter.test.ts` (32 tests) — formatMarkdownReport (22): structure, hypothesis, table headers/rows, formatDelta sign logic, deltaStatus labels, regressions/improvements sections, decision section; saveReport (10): dir creation, file paths, JSON content, markdown content, return shape; uses `jest.unstable_mockModule` for `node:fs/promises`
+  - `reporter-history.test.ts` (19 tests) — loadExperimentHistory (8): happy path 2 files, empty dir, single file, sort order newest-first, JSON parse error → CollectorError, schema error → CollectorError, non-JSON files ignored, mixed file types; formatHistoryTable (11): empty array → "No experiments found", accepted experiment (✓ marker), rejected experiment (no marker), multiple rows in order, date slicing, TSR/pass@1 toFixed(2), guard violations raw number, table structure; uses `jest.unstable_mockModule` for `node:fs`
 
 ### Integration Tests
 
@@ -592,8 +716,62 @@ const sample = sampleQuickSubset(allTasks, 5); // Fisher-Yates, reproducible by 
 - Task 16.1: Eval Runner (Pure Logic) — pure aggregation: `aggregateTrialResults`, `buildTaskComparisons`, `makeDecision`
 - Task 16.2: Eval Runner (Isolation) — environment isolation: `snapshotManifest`, `runTrialsOnBranch`, git worktree helpers
 - Task 16.3: Eval Runner (Quick Mode + Orchestrator) — `sampleQuickSubset`, `runEval` full 8-step A/B protocol
+- Task 17.1: Result Comparator — `buildComparisonReport` pure function, `ComparisonReport` interface
+- Task 17.2: Reporter — `formatMarkdownReport` pure markdown formatter, `saveReport` async file writer
+- Task 17.3: Reporter Extension + CLI — `loadExperimentHistory` sync history reader, `formatHistoryTable` markdown table formatter, `bin/cli.ts` `airefinement report --history` command
+- Task 17.4: Reporter/Runner Integration — (deferred) `runner.ts` integration with reporter pipeline
 
 ## Changelog
+
+### 2026-02-26 — Task 17.3: Reporter Extension + CLI History Command
+
+Extended `reporter.ts` with experiment history functions; new `bin/cli.ts` wires them to CLI:
+
+**airefinement/src/eval/reporter.ts (extended):**
+- Added `loadExperimentHistory(reportsDir): ExperimentResult[]` — synchronous `readdirSync`/`readFileSync`, filters `*.json`, validates via `ExperimentResultSchema.parse`, throws `CollectorError` on parse or schema failure, sorts newest-first by `timestamp`
+- Added `formatHistoryTable(experiments): string` — `'No experiments found'` guard for empty array; markdown table with `# Experiment History` title; columns: Date (YYYY-MM-DD), Experiment, TSR (`.toFixed(2)`), pass@1 (`.toFixed(2)`), Guard Violations (raw), Decision (with ` ✓` for accepted)
+- Now imports both `node:fs/promises` (for `saveReport`) and `node:fs` (for `loadExperimentHistory`)
+
+**airefinement/bin/cli.ts (new):**
+- Dispatches `airefinement report --history` → `loadExperimentHistory` + `formatHistoryTable` → `console.log`
+- Reports dir: `join(process.cwd(), 'artifacts', 'reports')`
+- `CollectorError` caught → `console.error` + `process.exit(1)`; other errors re-thrown
+- Uses relative import `'../src/eval/reporter.js'` (not `@/` alias)
+
+**Unit tests (19 tests):**
+- `tests/unit/eval/reporter-history.test.ts` — `loadExperimentHistory` (8 tests): 2-file happy path, empty dir, single file, newest-first sort, JSON parse error, schema error, non-JSON ignored, mixed file types; `formatHistoryTable` (11 tests): empty guard, ✓ marker for accepted, no marker for non-accepted, multi-row, date format, numeric formatting, table structure
+- Uses `jest.unstable_mockModule` for `node:fs` (synchronous mock)
+
+**Integration subtask 17.4 created:** runner.ts integration deferred (risk to 70 existing Task 16 tests)
+
+### 2026-02-26 — Task 17.2: Reporter
+
+New leaf module `reporter.ts` for markdown report formatting and file writing:
+
+**airefinement/src/eval/reporter.ts (new):**
+- Private helpers: `formatDelta` (sign-prefixed toFixed(2)), `deltaStatus` (Better/Worse/Same), `formatTaskSection` (section header + task bullet list)
+- Exported `formatMarkdownReport(result, report): string` — pure function; 6-section markdown: header, hypothesis, 8-row results table, regressions, improvements, decision
+- Exported `saveReport(result, report, reportsDir): Promise<{jsonPath, mdPath}>` — `mkdir(recursive)` + writes `.json` and `.md` files; returns paths
+- Leaf module: only `node:path`, `node:fs/promises` runtime imports; project imports are type-only only
+
+**Unit tests (32 tests):**
+- `tests/unit/eval/reporter.test.ts` — formatMarkdownReport (22): structure, table headers/rows, delta sign formatting, deltaStatus labels, task sections, decision; saveReport (10): dir creation, path derivation, JSON/MD content, return shape
+- ESM mock via `jest.unstable_mockModule` for `node:fs/promises`
+
+### 2026-02-26 — Task 17.1: Result Comparator
+
+New leaf module `comparator.ts` for side-by-side A/B experiment comparison:
+
+**airefinement/src/eval/comparator.ts (new):**
+- Exported interface: `ComparisonReport` — 8 fields covering passthrough metrics, computed deltas, classified task arrays, and net assessment string
+- Exported function: `buildComparisonReport(result: ExperimentResult): ComparisonReport`
+- Iterates hardcoded 8-key `metricKeys` array for `deltas` computation (variant - control)
+- Classifies `per_task_comparison` into `regressions` / `improvements` / `unchanged` via `regression` flag + delta sign
+- `net_assessment = "${decision.toUpperCase()}: ${decision_rationale}"`
+- Pure function: no I/O, zero runtime imports (types only from `@/telemetry/schemas.js`)
+
+**Unit tests (17 tests):**
+- `tests/unit/eval/comparator.test.ts` — basic structure passthrough, 8-key deltas, task classification (all bucket combinations + edge cases), net_assessment format for all 3 decision values
 
 ### 2026-02-26 — Task 16.3: Eval Runner — Quick Mode + runEval Orchestrator
 
