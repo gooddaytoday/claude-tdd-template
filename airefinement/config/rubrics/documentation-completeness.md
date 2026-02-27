@@ -12,5 +12,6 @@ Rubric (score each 0-2):
 
 Do not favor responses based on length.
 
-Return JSON: {"accuracy":int,"function_coverage":int,"usage_examples":int,"error_scenarios":int,
-              "total":float,"rationale":"..."}
+Return machine-parseable JSON-only output (no extra text or surrounding prose) containing the exact keys:
+{"accuracy":int,"function_coverage":int,"usage_examples":int,"error_scenarios":int,"total":float,"rationale":"..."}
+Calculate "total" = (accuracy + function_coverage + usage_examples + error_scenarios) / 4 as a floating-point number (e.g., rounded to two decimals).
