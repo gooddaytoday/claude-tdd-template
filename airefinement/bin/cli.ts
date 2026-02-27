@@ -133,7 +133,7 @@ program
   .description('Show experiment evaluation reports')
   .option('--history', 'Show history table of all experiments')
   .option('--format <format>', 'Output format: json or md')
-  .option('--reports-dir <path>', 'Reports directory', 'artifacts/reports')
+  .option('--reports-dir <path>', 'Reports directory', `${DEFAULT_ARTIFACTS_DIR}/reports`)
   .action((opts: { history?: boolean; format?: string; reportsDir: string }) => {
     try {
       const history = loadExperimentHistory(opts.reportsDir);
