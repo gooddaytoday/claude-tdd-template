@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
+export const PhaseSchema = z.enum(['RED', 'GREEN', 'REFACTOR', 'CODE_REVIEW', 'ARCH_REVIEW', 'DOCS']);
+
 export const PhaseRecordSchema = z.object({
-  phase: z.enum(['RED', 'GREEN', 'REFACTOR', 'CODE_REVIEW', 'ARCH_REVIEW', 'DOCS']),
+  phase: PhaseSchema,
   status: z.enum(['passed', 'failed', 'skipped']),
   retries: z.number(),
   gate_result: z.enum(['pass', 'fail']),
@@ -16,7 +18,7 @@ export const FixRoutingRecordSchema = z.object({
   code_review_cycles: z.number(),
   arch_review_cycles: z.number(),
   escalations: z.array(z.object({
-    phase: z.string(),
+    phase: PhaseSchema,
     reason: z.string(),
     fix_request_id: z.string().optional(),
   })),
@@ -55,7 +57,7 @@ export type RunReport = z.infer<typeof RunReportSchema>;
 export const SubagentTimingEventSchema = z.object({
   timestamp: z.string(),
   agent: z.string(),
-  phase: z.string(),
+  phase: PhaseSchema,
   started_at: z.string(),
   finished_at: z.string(),
   tool_calls_count: z.number(),
@@ -147,7 +149,7 @@ export const TriggerResultSchema = z.object({
   rule: z.string(),
   severity: z.enum(['critical', 'warning', 'info']),
   description: z.string(),
-  affected_phase: z.string().optional(),
+  affected_phase: PhaseSchema.optional(),
   affected_agent: z.string().optional(),
   evidence: z.record(z.string(), z.unknown()),
 });
