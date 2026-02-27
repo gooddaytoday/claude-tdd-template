@@ -149,7 +149,7 @@ program
         return;
       }
 
-      const latest = history.at(-1);
+      const latest = history[0];
 
       if (!latest) {
         console.error('Error: No experiment reports found');
