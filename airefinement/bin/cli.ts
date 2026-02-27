@@ -179,7 +179,7 @@ program
       let reports = readRunReports(opts.artifactsDir);
 
       if (opts.runs) {
-        reports = reports.slice(-opts.runs);
+        reports = reports.slice(0, opts.runs);
       }
 
       const kpis = computePipelineKPIs(reports);
