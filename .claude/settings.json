@@ -1,6 +1,6 @@
 {
-  "defaultMode": "acceptEdits",
   "permissions": {
+    "defaultMode": "acceptEdits",
     "allow": [
       "Read",
       "Glob",
@@ -20,12 +20,14 @@
       "Edit(.dockerignore)",
       "Edit(CLAUDE.md)",
       "Edit(README.md)",
+      "Edit(airefinement/**)",
       "Write(src/**)",
       "Write(.claude/**)",
       "Write(.taskmaster/**)",
       "Write(dist/**)",
       "Write(tests/**)",
       "Write(docker/**)",
+      "Write(airefinement/artifacts/**)",
       "Bash(npm run dev)",
       "Bash(npm run build)",
       "Bash(npm run start)",
@@ -66,6 +68,8 @@
       "Bash(cp:*)",
       "Bash(mv:*)",
       "Bash(task-master :*)",
+      "Bash(date)",
+      "Bash(uuidgen)",
       "Skill(tm:*)",
       "mcp__task_master_ai__*",
       "Bash(npm run build && npm run lint)",
@@ -78,6 +82,7 @@
       "Task(tdd-code-reviewer:*)",
       "Task(tdd-architect-reviewer:*)",
       "Task(tdd-documenter:*)",
+      "Task(tdd-telemetry-reporter:*)",
       "Skill(tdd-integration)",
       "Skill(tdd-full-review)"
     ],
@@ -135,6 +140,18 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx tsx \"$CLAUDE_PROJECT_DIR/.claude/hooks/prevent-test-edit.ts\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "matcher": "",
@@ -143,6 +160,11 @@
             "type": "command",
             "command": "npx tsx \"$CLAUDE_PROJECT_DIR/.claude/hooks/prevent-test-edit.ts\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "npx tsx \"$CLAUDE_PROJECT_DIR/.claude/hooks/tdd-telemetry-hook.ts\"",
+            "timeout": 5
           }
         ]
       }

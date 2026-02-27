@@ -18,7 +18,7 @@ import { stdout } from 'node:process';
 
 interface HookInput {
   hook_event_name: string;
-  user_prompt?: string;
+  prompt?: string;
   session_id?: string;
 }
 
@@ -78,7 +78,7 @@ function main(): void {
     return;
   }
 
-  const prompt = inputData.user_prompt ?? '';
+  const prompt = inputData.prompt ?? '';
   const decision = classify(prompt);
 
   if (decision === 'activate') {
