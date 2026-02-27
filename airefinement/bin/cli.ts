@@ -115,7 +115,7 @@ program
     quick?: boolean;
   }) => {
     try {
-      const evalInput: EvalRunConfig & { quickMode?: boolean } = {
+      const evalInput: EvalRunConfig = {
         controlBranch: opts.control,
         variantBranch: opts.variant,
         datasetPath: opts.dataset,
@@ -124,7 +124,7 @@ program
         variantDescription: '',
         graderConfig: DEFAULT_GRADER_CONFIG,
         timeout: DEFAULT_EVAL_TIMEOUT_MS,
-        quickMode: opts.quick,
+        quick: opts.quick,
       };
       const result = await runEval(evalInput);
       console.log(JSON.stringify(result, null, 2));
