@@ -36,7 +36,13 @@ const DEFAULT_GRADER_CONFIG: CompositeConfig = {
   },
 };
 
-const parseIntOption = (v: string): number => parseInt(v, 10);
+const parseIntOption = (v: string): number => {
+  const parsed = parseInt(v, 10);
+  if (isNaN(parsed) || parsed <= 0) {
+    throw new Error('Value must be a positive integer');
+  }
+  return parsed;
+};
 
 export const program = new Command();
 
