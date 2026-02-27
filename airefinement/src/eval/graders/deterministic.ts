@@ -47,11 +47,19 @@ export async function gradeStaticAnalysis(input: DeterministicGraderInput): Prom
   const { error, stdout } = await runCommand('npx', ['tsc', '--noEmit'], workingDirectory);
 
   if (error && !stdout) {
+    if (error.message.includes('command not found') || error.message.includes('ENOENT')) {
+      return {
+        grader: 'StaticAnalysisGrader',
+        score: 1.0,
+        pass: true,
+        details: { skipped: true, errorCount: 0, warningCount: 0 },
+      };
+    }
     return {
       grader: 'StaticAnalysisGrader',
-      score: 1.0,
-      pass: true,
-      details: { skipped: true, errorCount: 0, warningCount: 0 },
+      score: 0.0,
+      pass: false,
+      details: { errorCount: 1, warningCount: 0, error: error.message },
     };
   }
 

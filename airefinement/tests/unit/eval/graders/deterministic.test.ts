@@ -166,6 +166,23 @@ describe('Deterministic Graders', () => {
       expect(result.details.warningCount).toBe(0);
     });
 
+    it('returns score 0.0 and pass false when execFile fails with generic error and empty stdout', async () => {
+      const error = new Error('some generic failure');
+      mockExecFile.mockImplementation((...args: any[]) => {
+        const callback = args[args.length - 1];
+        callback(error, '', '');
+      });
+
+      const result = await gradeStaticAnalysis(baseInput);
+
+      expect(result.score).toBe(0.0);
+      expect(result.pass).toBe(false);
+      expect(result.details.skipped).toBeUndefined();
+      expect(result.details.errorCount).toBe(1);
+      expect(result.details.warningCount).toBe(0);
+      expect(result.details.error).toBe('some generic failure');
+    });
+
     it('sets grader field to StaticAnalysisGrader', async () => {
       mockExecFile.mockImplementation((...args: any[]) => {
         const callback = args[args.length - 1];
