@@ -25,7 +25,7 @@ Implemented across three subtasks (11.1 → 11.3):
   - Used by: `runRefinement()` after `validateModifiedFiles()` check
 
 - `RefinementInput` - Input to `runRefinement()`
-  - Fields: `analysis: AnalysisResult`, `failedRunReports: RunReport[]`, `currentAgentPrompts: Record<string, string>`, `currentPolicies: Record<string, string>`
+  - Fields: `analysis: AnalysisResult`, `failedRunReports: RunReport[]`, `currentAgentPrompts: Record<string, string>`, `currentPolicies: Record<string, string>`, `dryRun?: boolean`
 
 - `RefinementOutput` - Output from `runRefinement()`
   - Fields: `experimentBranch: string`, `changedFiles: string[]`, `commitHash: string`, `agentStdout: string`

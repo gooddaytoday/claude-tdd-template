@@ -27,6 +27,7 @@ export interface RefinementInput {
   failedRunReports: RunReport[];
   currentAgentPrompts: Record<string, string>;
   currentPolicies: Record<string, string>;
+  dryRun?: boolean;
 }
 
 export interface RefinementOutput {
@@ -54,9 +55,19 @@ export function generateExperimentId(analysis: AnalysisResult): string {
 }
 
 export async function runRefinement(input: RefinementInput): Promise<RefinementOutput> {
-  const originalBranch = await getCurrentBranch();
   const experimentId = generateExperimentId(input.analysis);
   const experimentBranch = `refinement/${experimentId}`;
+
+  if (input.dryRun) {
+    return {
+      experimentBranch,
+      changedFiles: [],
+      commitHash: '',
+      agentStdout: '[dry-run] No changes made',
+    };
+  }
+
+  const originalBranch = await getCurrentBranch();
 
   await createBranch(experimentBranch);
 

@@ -83,7 +83,7 @@ program
         process.exitCode = 1;
         return;
       }
-      const refinementInput: RefinementInput & { analysisPath: string; dryRun?: boolean } = {
+      const refinementInput: RefinementInput & { analysisPath: string } = {
         analysis: parsedAnalysis,
         failedRunReports: [],
         currentAgentPrompts: {},
