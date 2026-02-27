@@ -4,9 +4,20 @@ import { createHash } from 'node:crypto';
 
 function execGit(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', args, (error, stdout) => {
+    const options = {
+      timeout: 30000, // 30 seconds
+      maxBuffer: 1024 * 1024 * 10, // 10 MB
+    };
+    
+    execFile('git', args, options, (error, stdout) => {
       if (error) {
-        reject(error);
+        if (error.killed) {
+          reject(new Error(`Git command timed out: git ${args.join(' ')}`));
+        } else if (error.message && error.message.includes('maxBuffer')) {
+          reject(new Error(`Git command output exceeded maxBuffer: git ${args.join(' ')}`));
+        } else {
+          reject(error);
+        }
       } else {
         resolve(stdout);
       }

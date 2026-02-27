@@ -36,7 +36,7 @@ describe('computePipelineKPIs', () => {
         ],
         fix_routing: { code_review_cycles: 1, arch_review_cycles: 0, escalations: [] },
         guard_violations: [
-          { timestamp: '2025-01-01', agent: 'agent', attempted_action: 'write', target_file: 'test.ts', blocked: true, reason: 'test' }
+          { timestamp: '2025-01-01T00:00:00.000Z', agent: 'agent', attempted_action: 'write', target_file: 'test.ts', blocked: true, reason: 'test' }
         ],
       },
       {
@@ -134,8 +134,8 @@ describe('computePipelineKPIs', () => {
         phases: [],
         fix_routing: { code_review_cycles: 0, arch_review_cycles: 0, escalations: [] },
         guard_violations: [
-          { timestamp: '1', agent: 'a', attempted_action: 'w', target_file: 'f', blocked: true, reason: 'r' },
-          { timestamp: '2', agent: 'a', attempted_action: 'w', target_file: 'f', blocked: true, reason: 'r' },
+          { timestamp: '2025-01-01T00:00:01.000Z', agent: 'a', attempted_action: 'w', target_file: 'f', blocked: true, reason: 'r' },
+          { timestamp: '2025-01-01T00:00:02.000Z', agent: 'a', attempted_action: 'w', target_file: 'f', blocked: true, reason: 'r' },
         ],
       },
       {
@@ -155,7 +155,7 @@ describe('computePipelineKPIs', () => {
         phases: [],
         fix_routing: { code_review_cycles: 0, arch_review_cycles: 0, escalations: [] },
         guard_violations: [
-          { timestamp: '3', agent: 'a', attempted_action: 'w', target_file: 'f', blocked: true, reason: 'r' },
+          { timestamp: '2025-01-01T00:00:03.000Z', agent: 'a', attempted_action: 'w', target_file: 'f', blocked: true, reason: 'r' },
         ],
       }
     ];

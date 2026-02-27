@@ -27,7 +27,7 @@ export const FixRoutingRecordSchema = z.object({
 export type FixRoutingRecord = z.infer<typeof FixRoutingRecordSchema>;
 
 export const GuardViolationEventSchema = z.object({
-  timestamp: z.string(),
+  timestamp: z.iso.datetime(),
   agent: z.string(),
   attempted_action: z.string(),
   target_file: z.string(),
@@ -39,7 +39,7 @@ export type GuardViolationEvent = z.infer<typeof GuardViolationEventSchema>;
 
 export const RunReportSchema = z.object({
   run_id: z.string(),
-  timestamp: z.string(),
+  timestamp: z.iso.datetime(),
   task_id: z.string(),
   subtask_id: z.string(),
   feature: z.string(),
@@ -55,7 +55,7 @@ export const RunReportSchema = z.object({
 export type RunReport = z.infer<typeof RunReportSchema>;
 
 export const SubagentTimingEventSchema = z.object({
-  timestamp: z.string(),
+  timestamp: z.iso.datetime(),
   agent: z.string(),
   phase: PhaseSchema,
   started_at: z.string(),
@@ -129,7 +129,7 @@ export type TaskComparison = z.infer<typeof TaskComparisonSchema>;
 
 export const ExperimentResultSchema = z.object({
   experiment_id: z.string(),
-  timestamp: z.string(),
+  timestamp: z.iso.datetime(),
   hypothesis: z.string(),
   variant_description: z.string(),
   dataset_version: z.string(),
@@ -157,7 +157,7 @@ export const TriggerResultSchema = z.object({
 export type TriggerResult = z.infer<typeof TriggerResultSchema>;
 
 export const AnalysisResultSchema = z.object({
-  timestamp: z.string(),
+  timestamp: z.iso.datetime(),
   runs_analyzed: z.number(),
   traces_analyzed: z.number(),
   triggers_fired: z.array(TriggerResultSchema),
