@@ -126,7 +126,7 @@ export function makeRunReport(overrides: Partial<RunReport> = {}): RunReport {
   };
 }
 
-function makeVersionManifest() {
+export function makeVersionManifest() {
   return {
     agent_prompts_hash: 'abc123',
     skill_hash: 'def456',
