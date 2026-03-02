@@ -52,6 +52,18 @@ export async function getChangedFiles(baseBranch: string): Promise<string[]> {
   return stdout.split('\n').filter((line) => line !== '');
 }
 
+export async function getWorkingTreeChangedFiles(): Promise<string[]> {
+  const unstaged = await execGit(['diff', '--name-only']);
+  const staged = await execGit(['diff', '--name-only', '--cached']);
+
+  const allFiles = new Set([
+    ...unstaged.split('\n').filter((line) => line !== ''),
+    ...staged.split('\n').filter((line) => line !== ''),
+  ]);
+
+  return Array.from(allFiles);
+}
+
 export async function hashFiles(paths: string[]): Promise<string> {
   const hash = createHash('sha256');
   for (const p of paths) {

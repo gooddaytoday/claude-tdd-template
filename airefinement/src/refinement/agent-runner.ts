@@ -1,5 +1,5 @@
 import type { AnalysisResult, RunReport } from '@/telemetry/schemas.js';
-import { getCurrentBranch, createBranch, checkoutBranch, getChangedFiles, commitAll } from '@/utils/git.js';
+import { getCurrentBranch, createBranch, checkoutBranch, getWorkingTreeChangedFiles, commitAll } from '@/utils/git.js';
 import { runClaude } from '@/utils/claude-cli.js';
 import { buildDiagnosisPrompt, ALLOWED_MODIFICATION_PATHS } from '@/refinement/prompt-templates.js';
 
@@ -86,7 +86,7 @@ export async function runRefinement(input: RefinementInput): Promise<RefinementO
       );
     }
 
-    const changedFiles = await getChangedFiles(originalBranch);
+    const changedFiles = await getWorkingTreeChangedFiles();
 
     const scopeCheck = validateModifiedFiles(changedFiles);
     if (!scopeCheck.valid) {
