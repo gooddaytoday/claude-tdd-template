@@ -471,6 +471,11 @@ function handleSubagentStop(): HookOutput {
 
 function handleSubagentStart(agentType?: string): HookOutput {
   if (!agentType) {
+    writeState({
+      activeSubagent: 'unknown',
+      lastUpdated: new Date().toISOString(),
+      sessionId: currentSessionId,
+    });
     return {};
   }
   writeState({
