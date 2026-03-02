@@ -33,6 +33,8 @@ export const GuardViolationEventSchema = z.object({
   target_file: z.string(),
   blocked: z.boolean(),
   reason: z.string(),
+  command_hash: z.string().optional(),
+  command_length: z.number().optional(),
 });
 
 export type GuardViolationEvent = z.infer<typeof GuardViolationEventSchema>;

@@ -14,6 +14,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { stdout } from 'node:process';
+import { createHash } from 'node:crypto';
 
 interface HookInput {
   hook_event_name: string;
@@ -37,6 +38,8 @@ interface ViolationEvent {
   target_file: string;
   blocked: boolean;
   reason: string;
+  command_hash?: string;
+  command_length?: number;
 }
 
 interface HookOutput {
@@ -115,6 +118,38 @@ function getProjectRoot(): string {
     cwd = parent;
   }
   return process.cwd();
+}
+
+function redactSensitiveSegment(value: string): string {
+  let sanitized = value;
+
+  // key=value style secrets
+  sanitized = sanitized.replace(
+    /\b([A-Za-z_][A-Za-z0-9_]*(?:token|secret|password|passwd|key))=([^\s]+)/gi,
+    '$1=<REDACTED>'
+  );
+  // CLI flags like --token=... or --password ...
+  sanitized = sanitized.replace(
+    /\b(--?(?:token|secret|password|passwd|key))(?:=|\s+)([^\s]+)/gi,
+    '$1=<REDACTED>'
+  );
+  // Authorization header style
+  sanitized = sanitized.replace(/\b(Bearer)\s+([^\s]+)/gi, '$1 <REDACTED>');
+
+  return sanitized;
+}
+
+function sanitizeCommand(command: string): Pick<ViolationEvent, 'target_file' | 'command_hash' | 'command_length'> {
+  const normalized = command.replace(/\s+/g, ' ').trim();
+  const prefix = redactSensitiveSegment(normalized.slice(0, 20));
+  const suffix = redactSensitiveSegment(normalized.slice(-20));
+  const commandHash = createHash('sha256').update(command).digest('hex');
+
+  return {
+    target_file: `cmd_sha256:${commandHash};len:${command.length};prefix:${prefix};suffix:${suffix}`,
+    command_hash: commandHash,
+    command_length: command.length,
+  };
 }
 
 // Current session ID, set from hook input in main()
@@ -231,13 +266,16 @@ function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
 
   if (bashCommandWritesToTests(command)) {
     if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
+      const sanitizedCommand = sanitizeCommand(command);
       logViolationEvent({
         timestamp: new Date().toISOString(),
         agent: currentSubagent,
         attempted_action: 'Bash write to tests',
-        target_file: command.slice(0, 200),
+        target_file: sanitizedCommand.target_file,
         blocked: true,
         reason: 'TDD Guard: Cannot modify test files via shell commands in GREEN/REFACTOR phases',
+        command_hash: sanitizedCommand.command_hash,
+        command_length: sanitizedCommand.command_length,
       });
       return {
         hookSpecificOutput: {
@@ -251,13 +289,16 @@ function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
 
   if (bashCommandWritesToJestConfig(command)) {
     if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
+      const sanitizedCommand = sanitizeCommand(command);
       logViolationEvent({
         timestamp: new Date().toISOString(),
         agent: currentSubagent,
         attempted_action: 'Bash write to jest config',
-        target_file: command.slice(0, 200),
+        target_file: sanitizedCommand.target_file,
         blocked: false,
         reason: 'TDD Guard: Modifying Jest configuration via shell command outside RED phase',
+        command_hash: sanitizedCommand.command_hash,
+        command_length: sanitizedCommand.command_length,
       });
       return {
         hookSpecificOutput: {
@@ -271,13 +312,16 @@ function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
 
   if (bashCommandWritesToEnforcementFiles(command)) {
     if (currentSubagent !== 'main') {
+      const sanitizedCommand = sanitizeCommand(command);
       logViolationEvent({
         timestamp: new Date().toISOString(),
         agent: currentSubagent,
         attempted_action: 'Bash write to enforcement files',
-        target_file: command.slice(0, 200),
+        target_file: sanitizedCommand.target_file,
         blocked: false,
         reason: 'TDD Guard: Modifying TDD enforcement files via shell command during an active subagent cycle',
+        command_hash: sanitizedCommand.command_hash,
+        command_length: sanitizedCommand.command_length,
       });
       return {
         hookSpecificOutput: {
