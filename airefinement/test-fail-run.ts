@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { RunReportSchema, ExperimentResultSchema } from './src/telemetry/schemas.js';
 
-const data = JSON.parse(readFileSync('tests/fixtures/artifacts/fail-run.json', 'utf8'));
+const moduleDir = dirname(fileURLToPath(import.meta.url));
+const fixturePath = join(moduleDir, 'tests/fixtures/artifacts/fail-run.json');
+const data = JSON.parse(readFileSync(fixturePath, 'utf8'));
 
 try {
   RunReportSchema.parse(data);
