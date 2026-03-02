@@ -7,12 +7,14 @@ try {
   RunReportSchema.parse(data);
   console.log("RunReportSchema Success");
 } catch(e) {
-  console.log("RunReportSchema Error:", e.issues);
+  console.error("RunReportSchema validation failed:", e);
+  throw e;
 }
 
 try {
   ExperimentResultSchema.parse(data);
   console.log("ExperimentResultSchema Success");
 } catch(e) {
-  console.log("ExperimentResultSchema Error:", e.issues);
+  console.error("ExperimentResultSchema validation failed:", e);
+  throw e;
 }
