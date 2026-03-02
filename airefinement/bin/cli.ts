@@ -55,7 +55,7 @@ program
   .option('--config <path>', 'Config directory', DEFAULT_CONFIG_DIR)
   .action((opts: { artifactsDir: string; config: string }) => {
     try {
-      const configPath = `${opts.config}/triggers.json`;
+      const configPath = `${opts.config}/triggers.yaml`;
       const config = loadTriggersConfig(configPath);
       const result = analyze(opts.artifactsDir, config);
       console.log(JSON.stringify(result, null, 2));

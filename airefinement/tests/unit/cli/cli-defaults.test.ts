@@ -129,12 +129,12 @@ describe('analyze command — default paths', () => {
     expect(artifactsArg).toContain('airefinement/artifacts');
   });
 
-  it('should pass a path containing "airefinement/config" to loadTriggersConfig() when --config is not provided', async () => {
+  it('should pass default "airefinement/config/triggers.yaml" to loadTriggersConfig() when --config is not provided', async () => {
     mockLoadTriggersConfig.mockReturnValue({});
     mockAnalyze.mockReturnValue({ triggers_fired: [], timestamp: '2026-01-01T00:00:00Z' });
     await program.parseAsync(['node', 'cli', 'analyze']);
     const configArg = mockLoadTriggersConfig.mock.calls[0]?.[0] as string;
-    expect(configArg).toContain('airefinement/config');
+    expect(configArg).toBe('airefinement/config/triggers.yaml');
   });
 
 });
