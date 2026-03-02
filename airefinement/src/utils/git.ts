@@ -56,6 +56,10 @@ export async function hashFiles(paths: string[]): Promise<string> {
   const hash = createHash('sha256');
   for (const p of paths) {
     const content = await readFile(p);
+    hash.update(p);
+    hash.update('\0');
+    hash.update(String(content.length));
+    hash.update('\0');
     hash.update(content);
   }
   return hash.digest('hex');
