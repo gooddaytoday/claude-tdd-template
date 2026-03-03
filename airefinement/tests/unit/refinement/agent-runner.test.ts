@@ -4,7 +4,7 @@ import type { AnalysisResult, RunReport, TriggerResult } from '@/telemetry/schem
 const mockGetCurrentBranch = jest.fn<() => Promise<string>>();
 const mockCreateBranch = jest.fn<(branch: string) => Promise<void>>();
 const mockCommitAll = jest.fn<(message: string) => Promise<void>>();
-const mockGetChangedFiles = jest.fn<(branch: string) => Promise<string[]>>();
+const mockGetWorkingTreeChangedFiles = jest.fn<() => Promise<string[]>>();
 
 const mockRunClaude = jest.fn<(opts: { prompt: string; workingDirectory: string; maxTurns: number }) => Promise<{ exitCode: number; stdout: string; stderr: string; durationMs: number }>>();
 const mockBuildDiagnosisPrompt = jest.fn<(input: unknown) => string>();
@@ -13,7 +13,7 @@ jest.unstable_mockModule('@/utils/git.js', () => ({
   getCurrentBranch: mockGetCurrentBranch,
   createBranch: mockCreateBranch,
   commitAll: mockCommitAll,
-  getChangedFiles: mockGetChangedFiles,
+  getWorkingTreeChangedFiles: mockGetWorkingTreeChangedFiles,
   checkoutBranch: jest.fn(),
   getDiff: jest.fn(),
   hashFiles: jest.fn(),
@@ -79,7 +79,7 @@ describe('agent-runner', () => {
     mockGetCurrentBranch.mockResolvedValue('main');
     mockCreateBranch.mockResolvedValue(undefined);
     mockCommitAll.mockResolvedValue(undefined);
-    mockGetChangedFiles.mockResolvedValue(['src/foo.ts', 'src/bar.ts']);
+    mockGetWorkingTreeChangedFiles.mockResolvedValue(['src/foo.ts', 'src/bar.ts']);
     mockRunClaude.mockResolvedValue({ exitCode: 0, stdout: 'Claude output', stderr: '', durationMs: 1000 });
     mockBuildDiagnosisPrompt.mockReturnValue('built prompt string');
   });
@@ -176,10 +176,10 @@ describe('agent-runner', () => {
       expect(opts.maxTurns).toBe(10);
     });
 
-    it('calls getChangedFiles with the original branch name', async () => {
+    it('calls getWorkingTreeChangedFiles to collect modified files', async () => {
       mockGetCurrentBranch.mockResolvedValue('feature/some-branch');
       await runRefinement(makeInput());
-      expect(mockGetChangedFiles).toHaveBeenCalledWith('feature/some-branch');
+      expect(mockGetWorkingTreeChangedFiles).toHaveBeenCalledTimes(1);
     });
 
     it('calls commitAll with message containing experiment ID', async () => {
@@ -195,7 +195,7 @@ describe('agent-runner', () => {
       expect(result.experimentBranch).toBe(mockCreateBranch.mock.calls[0][0]);
     });
 
-    it('returns RefinementOutput with changedFiles from getChangedFiles', async () => {
+    it('returns RefinementOutput with changedFiles from getWorkingTreeChangedFiles', async () => {
       const result = await runRefinement(makeInput());
       expect(result.changedFiles).toEqual(['src/foo.ts', 'src/bar.ts']);
     });
@@ -232,7 +232,7 @@ describe('agent-runner', () => {
     });
 
     it('handles empty changedFiles when Claude made no changes', async () => {
-      mockGetChangedFiles.mockResolvedValue([]);
+      mockGetWorkingTreeChangedFiles.mockResolvedValue([]);
       const result = await runRefinement(makeInput());
       expect(result.changedFiles).toEqual([]);
       expect(result.experimentBranch).toMatch(/^refinement\//);
@@ -250,14 +250,17 @@ describe('agent-runner', () => {
       expect(createIdx).toBeLessThan(runIdx);
     });
 
-    it('calls commitAll after getChangedFiles', async () => {
+    it('calls commitAll after getWorkingTreeChangedFiles', async () => {
       const callOrder: string[] = [];
-      mockGetChangedFiles.mockImplementation(async () => { callOrder.push('getChangedFiles'); return []; });
+      mockGetWorkingTreeChangedFiles.mockImplementation(async () => {
+        callOrder.push('getWorkingTreeChangedFiles');
+        return [];
+      });
       mockCommitAll.mockImplementation(async () => { callOrder.push('commitAll'); });
 
       await runRefinement(makeInput());
 
-      const changedIdx = callOrder.indexOf('getChangedFiles');
+      const changedIdx = callOrder.indexOf('getWorkingTreeChangedFiles');
       const commitIdx = callOrder.indexOf('commitAll');
       expect(changedIdx).toBeLessThan(commitIdx);
     });
@@ -381,25 +384,25 @@ describe('agent-runner', () => {
     });
 
     it('does NOT call commitAll when changed files are out of scope', async () => {
-      mockGetChangedFiles.mockResolvedValue(['src/foo.ts', 'src/bar.ts']);
+      mockGetWorkingTreeChangedFiles.mockResolvedValue(['src/foo.ts', 'src/bar.ts']);
       await expect(runRefinement(makeInput())).rejects.toThrow();
       expect(mockCommitAll).not.toHaveBeenCalled();
     });
 
     it('calls checkoutBranch(originalBranch) when scope violation is detected', async () => {
       mockGetCurrentBranch.mockResolvedValue('feature/my-branch');
-      mockGetChangedFiles.mockResolvedValue(['src/out-of-scope.ts']);
+      mockGetWorkingTreeChangedFiles.mockResolvedValue(['src/out-of-scope.ts']);
       await expect(runRefinement(makeInput())).rejects.toThrow();
       expect(mockCheckoutBranchFn).toHaveBeenCalledWith('feature/my-branch');
     });
 
     it('throws ScopeViolationError when files are outside allowed paths', async () => {
-      mockGetChangedFiles.mockResolvedValue(['src/foo.ts']);
+      mockGetWorkingTreeChangedFiles.mockResolvedValue(['src/foo.ts']);
       await expect(runRefinement(makeInput())).rejects.toBeInstanceOf(ScopeViolationErrorClass);
     });
 
     it('ScopeViolationError.violations contains the violating files', async () => {
-      mockGetChangedFiles.mockResolvedValue(['src/foo.ts', 'tests/bar.ts']);
+      mockGetWorkingTreeChangedFiles.mockResolvedValue(['src/foo.ts', 'tests/bar.ts']);
       let caughtError: (Error & { violations?: string[] }) | undefined;
       try {
         await runRefinement(makeInput());
@@ -410,13 +413,13 @@ describe('agent-runner', () => {
     });
 
     it('calls commitAll normally when all changed files are within allowed paths', async () => {
-      mockGetChangedFiles.mockResolvedValue(['.claude/agents/foo.md', '.claude/skills/x.md']);
+      mockGetWorkingTreeChangedFiles.mockResolvedValue(['.claude/agents/foo.md', '.claude/skills/x.md']);
       await runRefinement(makeInput());
       expect(mockCommitAll).toHaveBeenCalledTimes(1);
     });
 
-    it('validates the files returned by getChangedFiles (out-of-scope triggers ScopeViolationError)', async () => {
-      mockGetChangedFiles.mockResolvedValue(['src/implementation.ts']);
+    it('validates the files returned by getWorkingTreeChangedFiles (out-of-scope triggers ScopeViolationError)', async () => {
+      mockGetWorkingTreeChangedFiles.mockResolvedValue(['src/implementation.ts']);
       await expect(runRefinement(makeInput())).rejects.toBeInstanceOf(ScopeViolationErrorClass);
     });
   });
