@@ -1,13 +1,14 @@
 # Deep Research Prompt 11: Адаптация под Cursor IDE
-<!-- markdownlint-disable MD032 MD034 -->
 
 ## Общая задача
 
-Оптимизировать TDD-ориентированный agent harness в репозитории `https://github.com/gooddaytoday/claude-tdd-template` для работы в Claude Code CLI и Cursor IDE. Основной SKILL для работы — [https://github.com/gooddaytoday/claude-tdd-template/blob/main/.claude/skills/tdd-integration/skill.md](https://github.com/gooddaytoday/claude-tdd-template/blob/main/.claude/skills/tdd-integration/skill.md).
+Адаптировать Claude Code CLI TDD-ориентированный agent harness в репозитории `https://github.com/gooddaytoday/claude-tdd-template` для работы в Cursor IDE, сохранив полную текущую работоспособность в Claude Code CLI.
+
+Основной SKILL для работы — [https://github.com/gooddaytoday/claude-tdd-template/blob/main/.claude/skills/tdd-integration/skill.md](https://github.com/gooddaytoday/claude-tdd-template/blob/main/.claude/skills/tdd-integration/skill.md).
 
 ## Архитектура (AS-IS)
 
-**6-фазный TDD цикл:**
+**7-фазный TDD цикл (+ Pre-Phase):**
 
 ```
 Pre-Phase: Determine test type + Get parent task context from Task Master
@@ -23,6 +24,9 @@ Phase 4 (CODE REVIEW): tdd-code-reviewer → проверка качества
 Phase 5 (ARCHITECTURE REVIEW): tdd-architect-reviewer → проверка интеграции
     ↓ Gate: код интегрирован в проект (на последнем subtask — Full Task Review)
 Phase 6 (DOCUMENTATION): tdd-documenter → сохранение в task-master + CLAUDE.md
+    ↓ Gate: документация синхронизирована с результатом цикла
+Phase 7 (TELEMETRY): tdd-telemetry-reporter → сбор Run Report (JSON) + артефактов
+    ↓ Gate: отчёт сохранён/валидирован (или soft-fail с retry и переходом в DONE)
     ↓
 DONE → переход к следующему subtask
 ```
@@ -31,37 +35,44 @@ DONE → переход к следующему subtask
 
 | Агент | Модель | Роль | Tools |
 |-------|--------|------|-------|
-| tdd-architect-reviewer | opus | Архитектурный анализ, Full Task Review | Read, Glob, Grep, Bash, Task, task-master MCP |
+| tdd-architect-reviewer | opus | Архитектурный анализ, Full Task Review | Read, Glob, Grep, Bash, task-master MCP |
 | tdd-test-writer | sonnet | Написание failing тестов | Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion |
 | tdd-implementer | sonnet | Минимальная реализация | Read, Glob, Grep, Write, Edit, Bash |
 | tdd-code-reviewer | sonnet | Code quality review | Read, Glob, Grep, Bash, Task |
 | tdd-refactorer | sonnet | Рефакторинг кода | Read, Glob, Grep, Write, Edit, Bash |
-| tdd-documenter | haiku | Документация | Read, Glob, Grep, Write, Edit, Bash, Task, task-master MCP |
+| tdd-documenter | sonnet | Документация | Read, Glob, Grep, Write, Edit, Bash, Task, task-master MCP |
+| tdd-telemetry-reporter | haiku | Сбор telemetry run report | Read, Bash, Write |
 
 **TDD Guard — техническое enforcement:**
 
-Хук `prevent-test-edit.ts` (PreToolUse) обеспечивает жёсткое ограничение:
-- Отслеживает активного субагента через `.claude/.guard-state.json` (runtime-only, gitignored)
-- При вызове Task tool — записывает имя субагента в state
-- При вызове Write/Edit — проверяет, модифицируется ли файл в `tests/**`
+Хук `prevent-test-edit.ts` (PreToolUse + SubagentStart + SubagentStop) обеспечивает жёсткое ограничение:
+
+- Отслеживает активного субагента через `.claude/.guard-state.json` (runtime-only, gitignored), с `sessionId` и TTL
+- При `SubagentStart`/Task tool — записывает имя субагента в state
+- При вызове Write/Edit/MultiEdit — проверяет, модифицируется ли файл в `tests/**`
 - Разрешает модификацию тестов ТОЛЬКО для `tdd-test-writer` и `main` агента
 - GREEN/REFACTOR/CODE REVIEW/ARCHITECTURE/DOCUMENTATION фазы — тесты read-only
+- Защищает enforcement-файлы (`.claude/hooks/**`, `.claude/skills/**`, `.claude/settings.json`) от изменений субагентами
+- Отслеживает семантическое отключение тестов (`.skip`, `.only`, `xdescribe`, `xit`, `if(false)`)
+- Логирует нарушения в `airefinement/artifacts/traces/violations.jsonl`
 - При SubagentStop — сбрасывает state обратно в `main`
 
 **Автоактивация TDD Skill:**
 
 Хук `user-prompt-skill-eval.ts` (UserPromptSubmit) инжектирует инструкцию оценки при каждом промпте пользователя:
+
 - Если запрос на implement/add feature/build/create — автоматически активирует `Skill(tdd-integration)`
 - Если bug fix/docs/config — пропускает TDD
 
 **Task Master AI интеграция:**
 
 - Основной скилл `.claude/skills/tdd-integration/skill.md` оркестрирует весь цикл
-- 48+ команд в `.claude/commands/tm/` для управления задачами
-- Контекст parent task передаётся через все 6 фаз для subtask'ов
+- 45 команд в `.claude/commands/tm/` (+ `tm-next`, `tm-done`, `tm-check`, `tdd-integration`, `tdd-full-review`)
+- Контекст parent task передаётся через все фазы для subtask'ов
 - На последнем subtask — tdd-architect-reviewer выполняет Full Task Review всех файлов
 - При обнаружении orphaned code — автоматическое создание integration subtask
 - tdd-documenter сохраняет implementation details в task-master и создаёт module CLAUDE.md
+- `TASKMASTER_WORKFLOW.md` фиксирует lifecycle `next -> in-progress -> done -> next`
 
 **Система permissions (.claude/settings.json):**
 
@@ -74,22 +85,30 @@ DONE → переход к следующему subtask
 
 | Файл | Назначение |
 |------|-----------|
-| `.claude/agents/tdd-*.md` | 6 определений субагентов |
+| `.claude/agents/tdd-*.md` | 7 определений субагентов (включая `tdd-telemetry-reporter`) |
 | `.claude/skills/tdd-integration/skill.md` | Основной TDD skill (оркестратор) |
 | `.claude/hooks/prevent-test-edit.ts` | TDD Guard (PreToolUse hook) |
+| `.claude/hooks/tdd-telemetry-hook.ts` | Telemetry hook (SubagentStop timing events) |
 | `.claude/hooks/user-prompt-skill-eval.ts` | Автоактивация skill (UserPromptSubmit hook) |
+| `.claude/skills/tdd-integration/phases/*.md` | Модульные инструкции по фазам (включая `telemetry.md`) |
+| `.claude/skills/tdd-integration/schemas/*.md` | Контракты Context/Phase Packet |
+| `.claude/skills/tdd-integration/policies/*.md` | Guard/auto-activation политики |
+| `.claude/skills/tdd-integration/forms/*.md` | Чеклисты и шаблоны review/documentation |
 | `.claude/settings.json` | Permissions, hooks config, env |
 | `.claude/utils/detect-test-type.md` | Алгоритм автоопределения типа тестов |
-| `.claude/commands/tm/*.md` | 48+ Task Master команд |
+| `.claude/commands/tm/*.md` | 45 Task Master команд |
 | `.claude/commands/tdd-integration.md` | Ручной триггер TDD цикла |
+| `.claude/TASKMASTER_WORKFLOW.md` | Рекомендованный workflow для Task Master |
+| `airefinement/**` | Модуль continuous refinement и eval TDD harness |
 | `CLAUDE.md` | Философия TDD, модульная документация |
 
 ## Task Master AI интеграция и направленность
 
-- Поток: `parent task -> subtask -> 6-phase TDD cycle -> next subtask`
-- Контекст parent task проходит через все 6 фаз
+- Поток: `parent task -> subtask -> pre-phase + 7-phase TDD cycle -> next subtask`
+- Контекст parent task проходит через все фазы, включая TELEMETRY
 - На финальном subtask: Full Task Review + создание integration subtask при orphaned code
 - Документирование результатов обратно в task-master и `CLAUDE.md`
+- Telemetry phase формирует run-level артефакты для `airefinement` анализа
 
 ## Основные ссылки в репозитории
 
@@ -102,6 +121,15 @@ DONE → переход к следующему subtask
 - Команды Task Master: `.claude/commands/tm/*.md`
 - TDD command: `.claude/commands/tdd-integration.md`
 - Философия и правила: `CLAUDE.md`
+
+## airefinement — AI Refinement Module
+
+- `airefinement/` — отдельная система непрерывного улучшения TDD harness
+- CLI команды: `analyze`, `refine`, `eval`, `report`, `metrics`
+- Артефакты: `airefinement/artifacts/runs/`, `airefinement/artifacts/traces/`, `airefinement/artifacts/reports/`
+- Eval stack: Golden Dataset + deterministic graders + LLM-judge + calibration + composite scoring
+- Refinement loop: диагностика деградаций/регрессий и генерация улучшений в ограниченном scope (`.claude/agents|skills|hooks`)
+- Связь с TDD циклом: TELEMETRY и guard violations feed данные в eval/refinement pipeline
 
 ## Репозитории лучших практик
 
@@ -143,17 +171,18 @@ DONE → переход к следующему subtask
 
 ## Контекст исследования
 
-Исследуйте и синтезируйте лучшие практики для оптимизации TDD-ориентированного agent harness. Система работает как в Claude Code CLI, так и в Cursor IDE. Текущий набор из 6 субагентов оркестрируется через TDD Integration Skill и Task Master AI. Цель — максимальное качество каждого компонента harness согласно актуальным практикам 2025-2026.
+Исследуйте и синтезируйте лучшие практики для оптимизации TDD-ориентированного agent harness. Система должна одинаково работать как в Claude Code CLI, так и в Cursor IDE. Текущий набор из 7 субагентов оркестрируется через TDD Integration Skill и Task Master AI, с отдельной TELEMETRY фазой и downstream контуром `airefinement`. Цель — максимальное качество каждого компонента harness согласно актуальным практикам 2025-2026.
 
 ## Основное направление исследования
 
-Cursor adaptation:
-- `.claude/agents` vs `.cursor/agents`
-- `.claude/skills` vs `.cursor/skills`
+Cursor adaptation of current `.claude/` TDD-integration SKILL configuration:
+
+- `.claude/agents` (source of truth) vs отсутствие `.cursor/agents` в репозитории
+- `.claude/skills` (source of truth) vs отсутствие `.cursor/skills` в репозитории
 - hooks lifecycle differences
-- Cursor rules как дополнение или замена части `.claude/` логики
-- MCP серверы в Cursor (включая browser/chrome tooling) для расширения TDD цикла
+- Cursor rules (`.cursor/rules/*.mdc`) как дополнение/компенсация части `.claude/` логики
 - optimal dual-use configuration
+- граница ответственности: project-level `.claude/*` vs IDE-level Cursor MCP/skills
 
 ## Ссылки по теме направления
 
@@ -164,8 +193,8 @@ Cursor adaptation:
 
 ## Важные фокусные вопросы для подисследования
 
-1. Какие элементы `.claude/` конфигурации переносятся в Cursor нативно, а какие требуют адаптационного слоя?
-2. Когда использовать `.cursor/rules/`, а когда оставаться на `.claude/agents/skills`?
-3. Как организовать единый процесс Task Master orchestration для двух сред?
-4. Какие Cursor-функции (background agents, multi-file editing, MCP) реально усиливают TDD workflow?
-5. Какая целевая dual-use структура репозитория минимизирует maintenance overhead?
+1. Какие элементы `.claude/` конфигурации можно централизовать как source-of-truth, а какие лучше дублировать в Cursor?
+2. Как формализовать mapping между `.claude` hooks/permissions и возможностями Cursor (без прямого hook-lifecycle parity)?
+3. Как организовать единый Task Master orchestration поток для Claude Code CLI и Cursor IDE, если MCP и skills в Cursor частично IDE-level?
+4. Какие Cursor-функции (skills, background agents, multi-file editing, browser MCP, context7 MCP) дают максимальный прирост качества именно для RED/GREEN/REFACTOR/CODE_REVIEW/ARCH_REVIEW/DOCS/TELEMETRY?
+5. Какая dual-use структура репозитория минимизирует maintenance overhead при наличии `airefinement` feedback loop?
