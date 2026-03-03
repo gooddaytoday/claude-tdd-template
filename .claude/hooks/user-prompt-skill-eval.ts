@@ -22,7 +22,7 @@ interface HookInput {
   session_id?: string;
 }
 
-const SKIP_PATTERNS = [
+export const SKIP_PATTERNS = [
   /\b(?:fix|debug|hotfix)\s+(?:bug|issue|error|crash)\b/i,
   /\b(?:update|edit|change)\s+(?:docs?|documentation|readme|config|configuration)\b/i,
   /\b(?:format|lint|prettier|eslint)\b/i,
@@ -34,7 +34,7 @@ const SKIP_PATTERNS = [
   /\b(?:update|upgrade)\s+(?:dependency|dependencies|package|packages)\b/i,
 ];
 
-const ACTIVATE_PATTERNS = [
+export const ACTIVATE_PATTERNS = [
   /\b(?:implement|develop)\s+(?:feature|endpoint|api|service|module|command|integration|\w+\s+\w+)/i,
   /\badd\s+(?:feature|functionality|capability|endpoint|route|handler|support)\b/i,
   /\bcreate\s+(?:service|handler|endpoint|module|component|model|utility|function)\b/i,
@@ -44,7 +44,7 @@ const ACTIVATE_PATTERNS = [
   /\badd\s+support\s+for\b/i,
 ];
 
-const SUGGEST_PATTERNS = [
+export const SUGGEST_PATTERNS = [
   /\b(?:fix)\s+(?:build|compilation|type\s*error)\b/i,
   /\bupdate\s+(?:api|database|schema|integration)\b/i,
   /\brefactor[\s\S]*\badd\b/i,
@@ -53,9 +53,9 @@ const SUGGEST_PATTERNS = [
   /\b(?:change|modify|alter)\s+(?:behavior|logic|flow)\b/i,
 ];
 
-type Decision = 'activate' | 'skip' | 'suggest';
+export type Decision = 'activate' | 'skip' | 'suggest';
 
-function classify(prompt: string): Decision {
+export function classify(prompt: string): Decision {
   if (/--no-tdd\b/i.test(prompt) || /\bskip\s+tdd\b/i.test(prompt)) {
     return 'skip';
   }
@@ -123,4 +123,6 @@ You may invoke Skill(tdd-integration) manually, or proceed directly with impleme
   // decision === 'skip': output nothing
 }
 
-main();
+if (!process.env.JEST_WORKER_ID) {
+  main();
+}
