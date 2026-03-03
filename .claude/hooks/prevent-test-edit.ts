@@ -120,7 +120,7 @@ function getProjectRoot(): string {
   return process.cwd();
 }
 
-function redactSensitiveSegment(value: string): string {
+export function redactSensitiveSegment(value: string): string {
   let sanitized = value;
 
   // key=value style secrets
@@ -139,7 +139,7 @@ function redactSensitiveSegment(value: string): string {
   return sanitized;
 }
 
-function sanitizeCommand(command: string): Pick<ViolationEvent, 'target_file' | 'command_hash' | 'command_length'> {
+export function sanitizeCommand(command: string): Pick<ViolationEvent, 'target_file' | 'command_hash' | 'command_length'> {
   const normalized = command.replace(/\s+/g, ' ').trim();
   const prefix = redactSensitiveSegment(normalized.slice(0, 20));
   const suffix = redactSensitiveSegment(normalized.slice(-20));
@@ -205,51 +205,51 @@ function writeState(state: GuardState): void {
   }
 }
 
-function extractSubagentName(toolInput: Record<string, unknown>): string | null {
+export function extractSubagentName(toolInput: Record<string, unknown>): string | null {
   const name = toolInput.subagent_type as string | undefined;
   return name || null;
 }
 
-function normalizePath(filePath: string): string {
+export function normalizePath(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/');
   const cleaned = normalized.replace(/^(?:\.+\/)+/, '');
   return cleaned.replace(/^\/+/, '');
 }
 
-function isTestFile(filePath: string): boolean {
+export function isTestFile(filePath: string): boolean {
   if (!filePath) return false;
   const normalized = filePath.replace(/\\/g, '/');
   const withoutLeadingSlash = normalizePath(filePath);
   return PROTECTED_TEST_PATHS.test(withoutLeadingSlash) || PROTECTED_TEST_PATHS.test(normalized);
 }
 
-function isJestConfigFile(filePath: string): boolean {
+export function isJestConfigFile(filePath: string): boolean {
   if (!filePath) return false;
   const normalized = filePath.replace(/\\/g, '/');
   const withoutLeadingSlash = normalizePath(filePath);
   return JEST_CONFIG_PATHS.test(withoutLeadingSlash) || JEST_CONFIG_PATHS.test(normalized);
 }
 
-function isEnforcementFile(filePath: string): boolean {
+export function isEnforcementFile(filePath: string): boolean {
   if (!filePath) return false;
   const normalized = filePath.replace(/\\/g, '/');
   const withoutLeadingSlash = normalizePath(filePath);
   return ENFORCEMENT_PATHS.test(withoutLeadingSlash) || ENFORCEMENT_PATHS.test(normalized);
 }
 
-function contentHasSkipPatterns(content: string): boolean {
+export function contentHasSkipPatterns(content: string): boolean {
   return SKIP_PATTERNS.test(content);
 }
 
-function bashCommandWritesToTests(command: string): boolean {
+export function bashCommandWritesToTests(command: string): boolean {
   return BASH_WRITE_TEST_PATTERNS.some(pattern => pattern.test(command));
 }
 
-function bashCommandWritesToJestConfig(command: string): boolean {
+export function bashCommandWritesToJestConfig(command: string): boolean {
   return BASH_WRITE_JEST_PATTERNS.some(pattern => pattern.test(command));
 }
 
-function bashCommandWritesToEnforcementFiles(command: string): boolean {
+export function bashCommandWritesToEnforcementFiles(command: string): boolean {
   return BASH_WRITE_ENFORCEMENT_PATTERNS.some(pattern => pattern.test(command));
 }
 
@@ -533,4 +533,6 @@ function main(): void {
   }
 }
 
-main();
+if (!process.env.JEST_WORKER_ID) {
+  main();
+}
