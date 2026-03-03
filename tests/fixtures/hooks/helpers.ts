@@ -1,3 +1,5 @@
+import { ViolationEvent } from '../../../.claude/hooks/prevent-test-edit';
+
 export interface MockHookInput {
   hook_event_name?: string;
   tool_name?: string;
@@ -81,5 +83,17 @@ export function makeTelemetryInput(agentType: string): Record<string, unknown> {
     permission_mode: 'default',
     agent_id: 'agent-001',
     agent_transcript_path: '/tmp/agent-transcript',
+  };
+}
+
+export function makeViolationEvent(overrides: Partial<ViolationEvent> = {}): ViolationEvent {
+  return {
+    timestamp: new Date().toISOString(),
+    agent: 'tdd-implementer',
+    attempted_action: 'Write write to test file',
+    target_file: 'tests/unit/foo.test.ts',
+    blocked: true,
+    reason: 'TDD Guard: Cannot modify test files',
+    ...overrides,
   };
 }

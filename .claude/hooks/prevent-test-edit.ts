@@ -31,7 +31,7 @@ interface GuardState {
   sessionId?: string;
 }
 
-interface ViolationEvent {
+export interface ViolationEvent {
   timestamp: string;
   agent: string;
   attempted_action: string;
@@ -155,7 +155,7 @@ export function sanitizeCommand(command: string): Pick<ViolationEvent, 'target_f
 // Current session ID, set from hook input in main()
 let currentSessionId: string | undefined;
 
-function logViolationEvent(event: ViolationEvent): void {
+export function logViolationEvent(event: ViolationEvent): void {
   try {
     const projectRoot = getProjectRoot();
     const logPath = join(projectRoot, 'airefinement/artifacts/traces/violations.jsonl');
