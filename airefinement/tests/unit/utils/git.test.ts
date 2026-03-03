@@ -53,6 +53,7 @@ const {
   commitAll,
   getDiff,
   getChangedFiles,
+  getWorkingTreeChangedFiles,
   hashFiles,
   stash,
   stashPop,
@@ -214,6 +215,71 @@ describe('Git Utilities', () => {
       const result = await getChangedFiles('main');
 
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('getWorkingTreeChangedFiles', () => {
+    it('includes unstaged, staged, and untracked files', async () => {
+      const outputs = ['src/unstaged.ts\n', 'src/staged.ts\n', 'src/untracked.ts\n'];
+      mockExecFile.mockImplementation(
+        (_file: unknown, _args: unknown, maybeOptions: unknown, maybeCallback: unknown) => {
+          const callback = resolveExecFileCallback(maybeOptions, maybeCallback);
+          callback(null, outputs.shift() ?? '', '');
+        }
+      );
+
+      const result = await getWorkingTreeChangedFiles();
+
+      expect(result).toEqual(['src/unstaged.ts', 'src/staged.ts', 'src/untracked.ts']);
+      expect(mockExecFile).toHaveBeenNthCalledWith(
+        1,
+        'git',
+        ['diff', '--name-only'],
+        expect.objectContaining(EXEC_GIT_OPTIONS),
+        expect.any(Function)
+      );
+      expect(mockExecFile).toHaveBeenNthCalledWith(
+        2,
+        'git',
+        ['diff', '--name-only', '--cached'],
+        expect.objectContaining(EXEC_GIT_OPTIONS),
+        expect.any(Function)
+      );
+      expect(mockExecFile).toHaveBeenNthCalledWith(
+        3,
+        'git',
+        ['ls-files', '--others', '--exclude-standard'],
+        expect.objectContaining(EXEC_GIT_OPTIONS),
+        expect.any(Function)
+      );
+    });
+
+    it('deduplicates files across unstaged, staged, and untracked output', async () => {
+      const outputs = ['src/shared.ts\nsrc/unstaged.ts\n', 'src/shared.ts\n', 'src/shared.ts\nsrc/untracked.ts\n'];
+      mockExecFile.mockImplementation(
+        (_file: unknown, _args: unknown, maybeOptions: unknown, maybeCallback: unknown) => {
+          const callback = resolveExecFileCallback(maybeOptions, maybeCallback);
+          callback(null, outputs.shift() ?? '', '');
+        }
+      );
+
+      const result = await getWorkingTreeChangedFiles();
+
+      expect(result).toEqual(['src/shared.ts', 'src/unstaged.ts', 'src/untracked.ts']);
+    });
+
+    it('filters empty lines from all sources', async () => {
+      const outputs = ['\nsrc/unstaged.ts\n\n', '\n\nsrc/staged.ts\n', '\n\nsrc/untracked.ts\n\n'];
+      mockExecFile.mockImplementation(
+        (_file: unknown, _args: unknown, maybeOptions: unknown, maybeCallback: unknown) => {
+          const callback = resolveExecFileCallback(maybeOptions, maybeCallback);
+          callback(null, outputs.shift() ?? '', '');
+        }
+      );
+
+      const result = await getWorkingTreeChangedFiles();
+
+      expect(result).toEqual(['src/unstaged.ts', 'src/staged.ts', 'src/untracked.ts']);
     });
   });
 

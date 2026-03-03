@@ -55,10 +55,12 @@ export async function getChangedFiles(baseBranch: string): Promise<string[]> {
 export async function getWorkingTreeChangedFiles(): Promise<string[]> {
   const unstaged = await execGit(['diff', '--name-only']);
   const staged = await execGit(['diff', '--name-only', '--cached']);
+  const untracked = await execGit(['ls-files', '--others', '--exclude-standard']);
 
   const allFiles = new Set([
     ...unstaged.split('\n').filter((line) => line !== ''),
     ...staged.split('\n').filter((line) => line !== ''),
+    ...untracked.split('\n').filter((line) => line !== ''),
   ]);
 
   return Array.from(allFiles);
