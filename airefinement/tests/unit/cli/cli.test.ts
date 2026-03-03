@@ -7,7 +7,7 @@ const mockLoadTriggersConfig = jest.fn();
 
 const mockRunRefinement = jest.fn();
 
-const mockRunEval = jest.fn();
+const mockRunEval = jest.fn<(config: unknown) => Promise<{ experiment_id: string; decision: string }>>();
 
 const mockLoadExperimentHistory = jest.fn();
 const mockFormatHistoryTable = jest.fn();
@@ -301,7 +301,7 @@ describe('eval command', () => {
     );
   });
 
-  it('should pass quickMode: true when --quick flag is provided', async () => {
+  it('should pass quick: true when --quick flag is provided', async () => {
     mockRunEval.mockResolvedValue({ experiment_id: 'exp-1', decision: 'accept' });
     await program.parseAsync([
       'node', 'cli', 'eval',
@@ -310,7 +310,7 @@ describe('eval command', () => {
       '--quick',
     ]);
     expect(mockRunEval).toHaveBeenCalledWith(
-      expect.objectContaining({ quickMode: true }),
+      expect.objectContaining({ quick: true }),
     );
   });
 

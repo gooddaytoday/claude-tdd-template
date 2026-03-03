@@ -31,7 +31,10 @@ export function readRunReports(dir: string): RunReport[] {
   for (const f of files) {
     try {
       const raw = JSON.parse(readFileSync(join(dir, f), 'utf-8'));
-      reports.push(RunReportSchema.parse(raw));
+      const parsed = RunReportSchema.safeParse(raw);
+      if (parsed.success) {
+        reports.push(parsed.data);
+      }
     } catch (error) {
       wrapParseError(f, error);
     }
@@ -68,7 +71,10 @@ export function getLatestBaseline(dir: string): AggregatedMetrics | null {
   for (const f of files) {
     try {
       const raw = JSON.parse(readFileSync(join(dir, f), 'utf-8'));
-      experiments.push(ExperimentResultSchema.parse(raw));
+      const parsed = ExperimentResultSchema.safeParse(raw);
+      if (parsed.success) {
+        experiments.push(parsed.data);
+      }
     } catch (error) {
       wrapParseError(f, error);
     }
