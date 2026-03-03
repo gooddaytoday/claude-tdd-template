@@ -1,0 +1,72 @@
+{
+  "experiment_id": "exp-task-19",
+  "timestamp": "2026-02-22T13:00:00.000Z",
+  "hypothesis": "Fixture-based e2e validation improves confidence",
+  "variant_description": "Task 19 fixtures and tests",
+  "dataset_version": "golden-v1",
+  "control_config": {
+    "agent_prompts_hash": "abc123",
+    "skill_hash": "def456",
+    "hooks_hash": "ghi789",
+    "settings_hash": "jkl012",
+    "dataset_version": "golden-v1"
+  },
+  "variant_config": {
+    "agent_prompts_hash": "abc124",
+    "skill_hash": "def457",
+    "hooks_hash": "ghi790",
+    "settings_hash": "jkl013",
+    "dataset_version": "golden-v1"
+  },
+  "control_results": {
+    "tsr": 0.6,
+    "pass_at_1": 0.3,
+    "pass_3": 0.5,
+    "code_quality_score": 0.7,
+    "total_tokens": 3200,
+    "median_cycle_time": 210,
+    "gate_failure_rate": 0.25,
+    "guard_violations": 2
+  },
+  "variant_results": {
+    "tsr": 0.75,
+    "pass_at_1": 0.5,
+    "pass_3": 0.75,
+    "code_quality_score": 0.8,
+    "total_tokens": 2900,
+    "median_cycle_time": 180,
+    "gate_failure_rate": 0.15,
+    "guard_violations": 1
+  },
+  "per_task_comparison": [
+    {
+      "task_id": "task-pass",
+      "control_outcome": "pass",
+      "variant_outcome": "pass",
+      "control_score": 0.8,
+      "variant_score": 0.9,
+      "delta": 0.1,
+      "regression": false
+    },
+    {
+      "task_id": "task-fail",
+      "control_outcome": "partial",
+      "variant_outcome": "fail",
+      "control_score": 0.6,
+      "variant_score": 0.4,
+      "delta": -0.2,
+      "regression": true
+    },
+    {
+      "task_id": "task-partial",
+      "control_outcome": "partial",
+      "variant_outcome": "partial",
+      "control_score": 0.5,
+      "variant_score": 0.5,
+      "delta": 0,
+      "regression": false
+    }
+  ],
+  "decision": "accept_with_caveat",
+  "decision_rationale": "Variant improves aggregate KPIs but has one per-task regression."
+}

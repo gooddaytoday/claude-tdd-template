@@ -1,0 +1,37 @@
+auto_refinement_triggers:
+  event_driven:
+    guard_violation:
+      threshold: 1
+      description: "Any TDD Guard breach triggers immediate investigation"
+    gate_failure_streak:
+      threshold: 3
+      description: "3 consecutive gate failures in the same phase"
+    token_anomaly:
+      sigma_threshold: 2
+      description: "Token usage exceeds 2 standard deviations from mean"
+    manual_intervention_streak:
+      threshold: 2
+      description: "Manual intervention required 2+ times in a row"
+
+  trend_based:
+    tsr_drop:
+      threshold_percent: 5
+      window_runs: 20
+      description: "Task Success Rate dropped >5% vs baseline"
+    token_inflation:
+      threshold_percent: 20
+      window_runs: 20
+      description: "Average token usage inflated >20% vs baseline"
+    flake_rate:
+      threshold_percent: 2
+      window_runs: 20
+      description: "Flaky test rate exceeds 2%"
+
+  commit_based:
+    watched_paths:
+      - ".claude/agents/*"
+      - ".claude/skills/**"
+      - ".claude/hooks/*"
+    action: "subset_eval"
+    subset_size: 10
+    block_if: "any Layer-1 metric below threshold"

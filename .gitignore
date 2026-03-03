@@ -8,6 +8,9 @@
 .taskmaster/tasks/*.json
 .taskmaster/reports/*.md
 
+# TDD Skill artifacts (subtask notes)
+.subtask-*.md
+
 # Common development files
 node_modules/
 dist/

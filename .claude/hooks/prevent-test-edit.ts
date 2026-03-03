@@ -11,9 +11,10 @@
  * - Tracks active subagent via state file with session_id and TTL
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { stdout } from 'node:process';
+import { createHash } from 'node:crypto';
 
 interface HookInput {
   hook_event_name: string;
@@ -21,12 +22,24 @@ interface HookInput {
   tool_input: Record<string, unknown>;
   cwd: string;
   session_id: string;
+  agent_type?: string;
 }
 
 interface GuardState {
   activeSubagent: string;
   lastUpdated: string;
   sessionId?: string;
+}
+
+interface ViolationEvent {
+  timestamp: string;
+  agent: string;
+  attempted_action: string;
+  target_file: string;
+  blocked: boolean;
+  reason: string;
+  command_hash?: string;
+  command_length?: number;
 }
 
 interface HookOutput {
@@ -107,8 +120,51 @@ function getProjectRoot(): string {
   return process.cwd();
 }
 
+function redactSensitiveSegment(value: string): string {
+  let sanitized = value;
+
+  // key=value style secrets
+  sanitized = sanitized.replace(
+    /\b([A-Za-z_][A-Za-z0-9_]*(?:token|secret|password|passwd|key))=([^\s]+)/gi,
+    '$1=<REDACTED>'
+  );
+  // CLI flags like --token=... or --password ...
+  sanitized = sanitized.replace(
+    /\b(--?(?:token|secret|password|passwd|key))(?:=|\s+)([^\s]+)/gi,
+    '$1=<REDACTED>'
+  );
+  // Authorization header style
+  sanitized = sanitized.replace(/\b(Bearer)\s+([^\s]+)/gi, '$1 <REDACTED>');
+
+  return sanitized;
+}
+
+function sanitizeCommand(command: string): Pick<ViolationEvent, 'target_file' | 'command_hash' | 'command_length'> {
+  const normalized = command.replace(/\s+/g, ' ').trim();
+  const prefix = redactSensitiveSegment(normalized.slice(0, 20));
+  const suffix = redactSensitiveSegment(normalized.slice(-20));
+  const commandHash = createHash('sha256').update(command).digest('hex');
+
+  return {
+    target_file: `cmd_sha256:${commandHash};len:${command.length};prefix:${prefix};suffix:${suffix}`,
+    command_hash: commandHash,
+    command_length: command.length,
+  };
+}
+
 // Current session ID, set from hook input in main()
 let currentSessionId: string | undefined;
+
+function logViolationEvent(event: ViolationEvent): void {
+  try {
+    const projectRoot = getProjectRoot();
+    const logPath = join(projectRoot, 'airefinement/artifacts/traces/violations.jsonl');
+    mkdirSync(dirname(logPath), { recursive: true });
+    appendFileSync(logPath, JSON.stringify(event) + '\n');
+  } catch {
+    // Telemetry must not break guard logic
+  }
+}
 
 function readState(): GuardState {
   const projectRoot = getProjectRoot();
@@ -150,7 +206,7 @@ function writeState(state: GuardState): void {
 }
 
 function extractSubagentName(toolInput: Record<string, unknown>): string | null {
-  const name = (toolInput.task_name || toolInput.name) as string | undefined;
+  const name = toolInput.subagent_type as string | undefined;
   return name || null;
 }
 
@@ -210,6 +266,17 @@ function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
 
   if (bashCommandWritesToTests(command)) {
     if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
+      const sanitizedCommand = sanitizeCommand(command);
+      logViolationEvent({
+        timestamp: new Date().toISOString(),
+        agent: currentSubagent,
+        attempted_action: 'Bash write to tests',
+        target_file: sanitizedCommand.target_file,
+        blocked: true,
+        reason: 'TDD Guard: Cannot modify test files via shell commands in GREEN/REFACTOR phases',
+        command_hash: sanitizedCommand.command_hash,
+        command_length: sanitizedCommand.command_length,
+      });
       return {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
@@ -222,6 +289,17 @@ function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
 
   if (bashCommandWritesToJestConfig(command)) {
     if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
+      const sanitizedCommand = sanitizeCommand(command);
+      logViolationEvent({
+        timestamp: new Date().toISOString(),
+        agent: currentSubagent,
+        attempted_action: 'Bash write to jest config',
+        target_file: sanitizedCommand.target_file,
+        blocked: false,
+        reason: 'TDD Guard: Modifying Jest configuration via shell command outside RED phase',
+        command_hash: sanitizedCommand.command_hash,
+        command_length: sanitizedCommand.command_length,
+      });
       return {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
@@ -234,6 +312,17 @@ function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
 
   if (bashCommandWritesToEnforcementFiles(command)) {
     if (currentSubagent !== 'main') {
+      const sanitizedCommand = sanitizeCommand(command);
+      logViolationEvent({
+        timestamp: new Date().toISOString(),
+        agent: currentSubagent,
+        attempted_action: 'Bash write to enforcement files',
+        target_file: sanitizedCommand.target_file,
+        blocked: false,
+        reason: 'TDD Guard: Modifying TDD enforcement files via shell command during an active subagent cycle',
+        command_hash: sanitizedCommand.command_hash,
+        command_length: sanitizedCommand.command_length,
+      });
       return {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
@@ -260,6 +349,14 @@ function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): H
 
   // A4: Protect enforcement files during any TDD subagent cycle (including unknown/stale state)
   if (isEnforcementFile(filePath) && currentSubagent !== 'main') {
+    logViolationEvent({
+      timestamp: new Date().toISOString(),
+      agent: currentSubagent,
+      attempted_action: `${toolName} write to enforcement files`,
+      target_file: filePath,
+      blocked: false,
+      reason: 'TDD Guard: Modifying TDD enforcement files during an active subagent cycle',
+    });
     return {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
@@ -272,6 +369,14 @@ function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): H
   // A2: fail-closed — unknown state blocks test modifications
   if (isTestFile(filePath)) {
     if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
+      logViolationEvent({
+        timestamp: new Date().toISOString(),
+        agent: currentSubagent,
+        attempted_action: `${toolName} write to test file`,
+        target_file: filePath,
+        blocked: true,
+        reason: `TDD Guard: Cannot modify test files in ${currentSubagent === 'unknown' ? 'unknown state' : currentSubagent + ' phase'}`,
+      });
       return {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
@@ -294,6 +399,14 @@ function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): H
       .filter(Boolean)
       .join('\n') as string;
     if (newContent && contentHasSkipPatterns(newContent)) {
+      logViolationEvent({
+        timestamp: new Date().toISOString(),
+        agent: currentSubagent,
+        attempted_action: `${toolName} with skip/only patterns`,
+        target_file: filePath,
+        blocked: false,
+        reason: 'TDD Guard: Test file contains skip/only patterns that may disable tests',
+      });
       return {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
@@ -309,6 +422,14 @@ function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): H
   // Jest config protection
   if (isJestConfigFile(filePath)) {
     if (!ALLOWED_TEST_WRITERS.includes(currentSubagent)) {
+      logViolationEvent({
+        timestamp: new Date().toISOString(),
+        agent: currentSubagent,
+        attempted_action: `${toolName} write to jest config`,
+        target_file: filePath,
+        blocked: false,
+        reason: 'TDD Guard: Modifying Jest configuration outside RED phase',
+      });
       return {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
@@ -348,6 +469,23 @@ function handleSubagentStop(): HookOutput {
   return {};
 }
 
+function handleSubagentStart(agentType?: string): HookOutput {
+  if (!agentType) {
+    writeState({
+      activeSubagent: 'unknown',
+      lastUpdated: new Date().toISOString(),
+      sessionId: currentSessionId,
+    });
+    return {};
+  }
+  writeState({
+    activeSubagent: agentType,
+    lastUpdated: new Date().toISOString(),
+    sessionId: currentSessionId,
+  });
+  return {};
+}
+
 function main(): void {
   try {
     const inputData = JSON.parse(readFileSync(0, 'utf-8')) as HookInput;
@@ -359,7 +497,9 @@ function main(): void {
 
     let result: HookOutput;
 
-    if (hookEventName === 'SubagentStop') {
+    if (hookEventName === 'SubagentStart') {
+      result = handleSubagentStart(inputData.agent_type);
+    } else if (hookEventName === 'SubagentStop') {
       result = handleSubagentStop();
     } else if (toolName === 'Task') {
       result = handleTaskToolUse(toolInput);

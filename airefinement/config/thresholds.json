@@ -1,0 +1,52 @@
+{
+  "pipeline_kpis": {
+    "tsr_target": 0.8,
+    "pass_at_1_target": 0.7,
+    "pass_3_target": 0.5,
+    "code_quality_score_target": 0.85,
+    "defect_escape_rate_max": 0.05,
+    "gate_failure_rate_max_per_phase": 0.2,
+    "guard_violations_max": 0,
+    "flake_rate_max": 0.02
+  },
+  "phase_gates": {
+    "RED": { "must_fail_with_assertion": true },
+    "GREEN": { "must_pass": true, "max_retries": 3 },
+    "REFACTOR": { "must_stay_green": true },
+    "CODE_REVIEW": { "max_fix_cycles": 5 },
+    "ARCH_REVIEW": { "max_fix_cycles": 5 },
+    "DOCS": { "must_update_task_master": true }
+  },
+  "role_metrics": {
+    "tdd-test-writer": {
+      "failing_test_rate": 1.0,
+      "mutation_score_min": 0.8,
+      "test_relevance_min": 0.9,
+      "specification_clarity_min": 0.8,
+      "edge_case_count_min": 3
+    },
+    "tdd-implementer": {
+      "tests_pass_rate": 1.0,
+      "max_retries": 3
+    },
+    "tdd-refactorer": {
+      "tests_remain_green": true,
+      "cyclomatic_complexity_max": 10,
+      "code_duplication_max_percent": 3
+    },
+    "tdd-code-reviewer": {
+      "false_positive_rate_max": 0.1,
+      "auto_fix_success_min": 0.8,
+      "review_consistency_pass3_min": 0.7
+    },
+    "tdd-architect-reviewer": {
+      "integration_validation": true,
+      "full_task_review_quality_min": 0.85
+    },
+    "tdd-documenter": {
+      "task_master_update": true,
+      "documentation_accuracy_min": 0.9,
+      "completeness_min": 0.85
+    }
+  }
+}

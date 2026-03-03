@@ -1,0 +1,81 @@
+{
+  "run_id": "run-pass",
+  "timestamp": "2026-02-22T12:00:00.000Z",
+  "task_id": "task-pass",
+  "subtask_id": "19.2",
+  "feature": "task-19-e2e",
+  "test_type": "integration",
+  "phases": [
+    {
+      "phase": "RED",
+      "status": "passed",
+      "retries": 0,
+      "gate_result": "pass",
+      "gate_failure_reason": null,
+      "changed_files": [
+        "tests/integration/pipeline/e2e-pipeline.test.ts"
+      ],
+      "duration_estimate": "20s"
+    },
+    {
+      "phase": "GREEN",
+      "status": "passed",
+      "retries": 0,
+      "gate_result": "pass",
+      "gate_failure_reason": null,
+      "changed_files": [
+        "src/telemetry/collector.ts"
+      ],
+      "duration_estimate": "40s"
+    },
+    {
+      "phase": "REFACTOR",
+      "status": "passed",
+      "retries": 0,
+      "gate_result": "pass",
+      "gate_failure_reason": null,
+      "changed_files": [
+        "src/metrics/pipeline-metrics.ts"
+      ],
+      "duration_estimate": "30s"
+    },
+    {
+      "phase": "CODE_REVIEW",
+      "status": "passed",
+      "retries": 0,
+      "gate_result": "pass",
+      "gate_failure_reason": null,
+      "changed_files": [],
+      "duration_estimate": "10s"
+    },
+    {
+      "phase": "ARCH_REVIEW",
+      "status": "passed",
+      "retries": 0,
+      "gate_result": "pass",
+      "gate_failure_reason": null,
+      "changed_files": [],
+      "duration_estimate": "15s"
+    },
+    {
+      "phase": "DOCS",
+      "status": "passed",
+      "retries": 0,
+      "gate_result": "pass",
+      "gate_failure_reason": null,
+      "changed_files": [
+        "src/metrics/CLAUDE.md"
+      ],
+      "duration_estimate": "25s"
+    }
+  ],
+  "fix_routing": {
+    "code_review_cycles": 0,
+    "arch_review_cycles": 0,
+    "escalations": []
+  },
+  "guard_violations": [],
+  "overall_status": "DONE",
+  "partial_credit_score": 1,
+  "total_tokens": 2400
+}

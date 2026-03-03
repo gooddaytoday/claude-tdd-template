@@ -31,12 +31,12 @@ DONE → переход к следующему subtask
 
 | Агент | Модель | Роль | Tools |
 |-------|--------|------|-------|
-| tdd-architect-reviewer | opus | Архитектурный анализ, Full Task Review | Read, Glob, Grep, Bash, Task, task-master MCP |
+| tdd-architect-reviewer | opus | Архитектурный анализ, Full Task Review | Read, Glob, Grep, Bash, mcp__task_master_ai__get_task, mcp__task_master_ai__get_tasks, mcp__task_master_ai__add_subtask |
 | tdd-test-writer | sonnet | Написание failing тестов | Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion |
 | tdd-implementer | sonnet | Минимальная реализация | Read, Glob, Grep, Write, Edit, Bash |
-| tdd-code-reviewer | sonnet | Code quality review | Read, Glob, Grep, Bash, Task |
+| tdd-code-reviewer | sonnet | Code quality review | Read, Glob, Grep, Bash |
 | tdd-refactorer | sonnet | Рефакторинг кода | Read, Glob, Grep, Write, Edit, Bash |
-| tdd-documenter | haiku | Документация | Read, Glob, Grep, Write, Edit, Bash, Task, task-master MCP |
+| tdd-documenter | sonnet | Документация | Read, Glob, Grep, Write, Edit, Bash, mcp__task_master_ai__get_task, mcp__task_master_ai__update_subtask |
 
 **TDD Guard — техническое enforcement:**
 
@@ -47,12 +47,14 @@ DONE → переход к следующему subtask
 - Разрешает модификацию тестов ТОЛЬКО для `tdd-test-writer` и `main` агента
 - GREEN/REFACTOR/CODE REVIEW/ARCHITECTURE/DOCUMENTATION фазы — тесты read-only
 - При SubagentStop — сбрасывает state обратно в `main`
+- Полная матрица ролей и разрешений вынесена в политику `[.claude/skills/tdd-integration/policies/guard-rules.md](.claude/skills/tdd-integration/policies/guard-rules.md)`
 
 **Автоактивация TDD Skill:**
 
 Хук `user-prompt-skill-eval.ts` (UserPromptSubmit) инжектирует инструкцию оценки при каждом промпте пользователя:
 - Если запрос на implement/add feature/build/create — автоматически активирует `Skill(tdd-integration)`
 - Если bug fix/docs/config — пропускает TDD
+- Подробные правила активации описаны в политике `[.claude/skills/tdd-integration/policies/auto-activation-rules.md](.claude/skills/tdd-integration/policies/auto-activation-rules.md)`
 
 **Task Master AI интеграция:**
 
@@ -75,13 +77,18 @@ DONE → переход к следующему subtask
 | Файл | Назначение |
 |------|-----------|
 | `.claude/agents/tdd-*.md` | 6 определений субагентов |
-| `.claude/skills/tdd-integration/skill.md` | Основной TDD skill (оркестратор) |
+| `.claude/skills/tdd-integration/skill.md` | Основной TDD skill (оркестратор и state machine) |
+| `.claude/skills/tdd-integration/phases/*.md` | Детализация делегирования для каждой фазы |
+| `.claude/skills/tdd-integration/schemas/*.md` | Контракты передачи данных (Phase Packet, Context Packet) |
+| `.claude/skills/tdd-integration/policies/*.md` | Правила Guard и автоактивации |
+| `.claude/skills/tdd-integration/forms/*.md` | Чек-листы и шаблоны документов |
 | `.claude/hooks/prevent-test-edit.ts` | TDD Guard (PreToolUse hook) |
 | `.claude/hooks/user-prompt-skill-eval.ts` | Автоактивация skill (UserPromptSubmit hook) |
 | `.claude/settings.json` | Permissions, hooks config, env |
 | `.claude/utils/detect-test-type.md` | Алгоритм автоопределения типа тестов |
 | `.claude/commands/tm/*.md` | 48+ Task Master команд |
 | `.claude/commands/tdd-integration.md` | Ручной триггер TDD цикла |
+| `.claude/commands/tdd-full-review.md` | Команда для финального ревью |
 | `CLAUDE.md` | Философия TDD, модульная документация |
 
 ## Task Master AI интеграция и направленность
@@ -95,12 +102,17 @@ DONE → переход к следующему subtask
 
 - Субагенты: `.claude/agents/tdd-*.md`
 - Основной skill: `.claude/skills/tdd-integration/skill.md`
+- Фазы: `.claude/skills/tdd-integration/phases/`
+- Схемы: `.claude/skills/tdd-integration/schemas/`
+- Политики: `.claude/skills/tdd-integration/policies/`
+- Формы/Шаблоны: `.claude/skills/tdd-integration/forms/`
 - Guard hook: `.claude/hooks/prevent-test-edit.ts`
 - Автоактивация skill: `.claude/hooks/user-prompt-skill-eval.ts`
 - Permissions: `.claude/settings.json`
 - Detect test type: `.claude/utils/detect-test-type.md`
 - Команды Task Master: `.claude/commands/tm/*.md`
 - TDD command: `.claude/commands/tdd-integration.md`
+- TDD Full Review command: `.claude/commands/tdd-full-review.md`
 - Философия и правила: `CLAUDE.md`
 
 ## Репозитории лучших практик

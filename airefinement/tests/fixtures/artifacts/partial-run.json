@@ -1,0 +1,94 @@
+{
+  "run_id": "run-partial",
+  "timestamp": "2026-02-21T10:15:00.000Z",
+  "task_id": "task-partial",
+  "subtask_id": "19.2",
+  "feature": "task-19-e2e",
+  "test_type": "integration",
+  "phases": [
+    {
+      "phase": "RED",
+      "status": "passed",
+      "retries": 0,
+      "gate_result": "pass",
+      "gate_failure_reason": null,
+      "changed_files": [
+        "tests/integration/pipeline/e2e-pipeline.test.ts"
+      ],
+      "duration_estimate": "25s"
+    },
+    {
+      "phase": "GREEN",
+      "status": "passed",
+      "retries": 1,
+      "gate_result": "pass",
+      "gate_failure_reason": null,
+      "changed_files": [
+        "src/metrics/role-metrics.ts"
+      ],
+      "duration_estimate": "80s"
+    },
+    {
+      "phase": "REFACTOR",
+      "status": "passed",
+      "retries": 0,
+      "gate_result": "pass",
+      "gate_failure_reason": null,
+      "changed_files": [
+        "src/metrics/pipeline-metrics.ts"
+      ],
+      "duration_estimate": "45s"
+    },
+    {
+      "phase": "CODE_REVIEW",
+      "status": "failed",
+      "retries": 1,
+      "gate_result": "fail",
+      "gate_failure_reason": "critical review finding unresolved",
+      "changed_files": [],
+      "duration_estimate": "60s"
+    },
+    {
+      "phase": "ARCH_REVIEW",
+      "status": "skipped",
+      "retries": 0,
+      "gate_result": "fail",
+      "gate_failure_reason": "escalated after code review",
+      "changed_files": [],
+      "duration_estimate": null
+    },
+    {
+      "phase": "DOCS",
+      "status": "skipped",
+      "retries": 0,
+      "gate_result": "fail",
+      "gate_failure_reason": "escalated after code review",
+      "changed_files": [],
+      "duration_estimate": null
+    }
+  ],
+  "fix_routing": {
+    "code_review_cycles": 2,
+    "arch_review_cycles": 1,
+    "escalations": [
+      {
+        "phase": "CODE_REVIEW",
+        "reason": "requires architectural changes",
+        "fix_request_id": "fix-019"
+      }
+    ]
+  },
+  "guard_violations": [
+    {
+      "timestamp": "2026-02-21T10:20:00.000Z",
+      "agent": "tdd-refactorer",
+      "attempted_action": "modify guarded test",
+      "target_file": "tests/integration/pipeline/e2e-pipeline.test.ts",
+      "blocked": true,
+      "reason": "Guard blocked test modification"
+    }
+  ],
+  "overall_status": "ESCALATED",
+  "partial_credit_score": 0.6,
+  "total_tokens": 3100
+}
