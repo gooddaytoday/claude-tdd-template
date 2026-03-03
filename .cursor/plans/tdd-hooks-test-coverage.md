@@ -202,7 +202,7 @@ export function makeTelemetryInput(agentType: string): Record<string, unknown> {
 
 ---
 
-## Phase 1: Guard Logic -- Path Matching & Pattern Detection
+## [DONE] Phase 1: Guard Logic -- Path Matching & Pattern Detection
 
 Тестирование чистых функций: вход → выход, без side effects.
 
@@ -386,7 +386,7 @@ describe('extractSubagentName', () => {
 
 ---
 
-## Phase 2: State Management
+## [DONE] Phase 2: State Management
 
 Тестирование `readState()` / `writeState()` -- filesystem interaction. Требует fs mock или tmpdir.
 
@@ -472,7 +472,7 @@ describe('state roundtrip', () => {
 
 ---
 
-## Phase 3: Violation Logging
+## [DONE] Phase 3: Violation Logging
 
 ### Файл: `tests/unit/hooks/violation-logging.test.ts`
 
@@ -505,7 +505,7 @@ describe('ViolationEvent structure', () => {
 
 ---
 
-## Phase 4: prevent-test-edit.ts Handlers
+## [DONE] Phase 4: prevent-test-edit.ts Handlers
 
 Тестирование handler-функций в изоляции. Каждый handler получает tool_input и возвращает HookOutput. Зависимость от guard state контролируется через `writeState()` перед каждым тестом.
 
@@ -624,7 +624,7 @@ describe('handler violation logging', () => {
 
 ---
 
-## Phase 5: tdd-telemetry-hook.ts
+## [DONE] Phase 5: tdd-telemetry-hook.ts
 
 ### Файл: `tests/unit/hooks/telemetry-hook.test.ts`
 

@@ -11,7 +11,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } fr
 import { join, dirname } from 'node:path';
 import { stdout } from 'node:process';
 
-interface SubagentStopInput {
+export interface SubagentStopInput {
   session_id: string;
   transcript_path: string;
   cwd: string;
@@ -24,7 +24,7 @@ interface SubagentStopInput {
   last_assistant_message?: string;
 }
 
-interface SubagentTimingEvent {
+export interface SubagentTimingEvent {
   timestamp: string;
   agent: string;
   phase: string;
@@ -34,7 +34,7 @@ interface SubagentTimingEvent {
 }
 
 // Map agent_type to phase name
-function agentTypeToPhase(agentType: string): string | null {
+export function agentTypeToPhase(agentType: string): string | null {
   const mapping: Record<string, string> = {
     'tdd-test-writer': 'RED',
     'tdd-implementer': 'GREEN',
@@ -47,7 +47,7 @@ function agentTypeToPhase(agentType: string): string | null {
   return mapping[agentType] || null;
 }
 
-function getProjectRoot(cwd: string): string {
+export function getProjectRoot(cwd: string): string {
   let current = cwd;
   for (let i = 0; i < 10; i++) {
     if (existsSync(join(current, '.claude'))) {
@@ -60,7 +60,7 @@ function getProjectRoot(cwd: string): string {
   return cwd;
 }
 
-function logTimingEvent(event: SubagentTimingEvent, projectRoot: string): void {
+export function logTimingEvent(event: SubagentTimingEvent, projectRoot: string): void {
   try {
     const logPath = join(projectRoot, 'airefinement/artifacts/traces/timings.jsonl');
     mkdirSync(dirname(logPath), { recursive: true });
@@ -124,4 +124,6 @@ function main(): void {
   }
 }
 
-main();
+if (!process.env.JEST_WORKER_ID) {
+  main();
+}
