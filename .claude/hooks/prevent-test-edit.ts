@@ -42,7 +42,7 @@ export interface ViolationEvent {
   command_length?: number;
 }
 
-interface HookOutput {
+export interface HookOutput {
   hookSpecificOutput?: {
     hookEventName: string;
     permissionDecision?: 'allow' | 'deny' | 'ask';
@@ -155,6 +155,10 @@ export function sanitizeCommand(command: string): Pick<ViolationEvent, 'target_f
 // Current session ID, set from hook input in main()
 let currentSessionId: string | undefined;
 
+export function setCurrentSessionId(id: string | undefined): void {
+  currentSessionId = id;
+}
+
 export function logViolationEvent(event: ViolationEvent): void {
   try {
     const projectRoot = getProjectRoot();
@@ -166,7 +170,7 @@ export function logViolationEvent(event: ViolationEvent): void {
   }
 }
 
-function readState(): GuardState {
+export function readState(): GuardState {
   const projectRoot = getProjectRoot();
   const statePath = join(projectRoot, STATE_FILE);
   try {
@@ -195,7 +199,7 @@ function readState(): GuardState {
   return { activeSubagent: 'unknown', lastUpdated: new Date().toISOString() };
 }
 
-function writeState(state: GuardState): void {
+export function writeState(state: GuardState): void {
   const projectRoot = getProjectRoot();
   const statePath = join(projectRoot, STATE_FILE);
   try {
@@ -254,7 +258,7 @@ export function bashCommandWritesToEnforcementFiles(command: string): boolean {
 }
 
 // A1: Handle Bash tool — detect write-capable commands targeting tests/ or jest configs
-function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
+export function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
   const command = (toolInput.command || toolInput.cmd || '') as string;
 
   if (!command) {
@@ -337,7 +341,7 @@ function handleBashCommand(toolInput: Record<string, unknown>): HookOutput {
 }
 
 // Handle Write/Edit tools with A2 (fail-closed), A3 (skip detection), A4 (enforcement protection)
-function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): HookOutput {
+export function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): HookOutput {
   const filePath = (toolInput.file_path || toolInput.path) as string | undefined;
 
   if (!filePath) {
@@ -443,7 +447,7 @@ function handleFileEdit(toolName: string, toolInput: Record<string, unknown>): H
   return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } };
 }
 
-function handleTaskToolUse(toolInput: Record<string, unknown>): HookOutput {
+export function handleTaskToolUse(toolInput: Record<string, unknown>): HookOutput {
   const subagentName = extractSubagentName(toolInput);
   if (subagentName) {
     writeState({
@@ -460,7 +464,7 @@ function handleTaskToolUse(toolInput: Record<string, unknown>): HookOutput {
   };
 }
 
-function handleSubagentStop(): HookOutput {
+export function handleSubagentStop(): HookOutput {
   writeState({
     activeSubagent: 'main',
     lastUpdated: new Date().toISOString(),
@@ -469,7 +473,7 @@ function handleSubagentStop(): HookOutput {
   return {};
 }
 
-function handleSubagentStart(agentType?: string): HookOutput {
+export function handleSubagentStart(agentType?: string): HookOutput {
   if (!agentType) {
     writeState({
       activeSubagent: 'unknown',
