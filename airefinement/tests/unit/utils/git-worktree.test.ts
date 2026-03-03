@@ -1,6 +1,40 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 
 const mockExecFile = jest.fn();
+const EXEC_GIT_OPTIONS = {
+  timeout: 30000,
+  maxBuffer: 1024 * 1024 * 10,
+};
+
+type ExecFileCallback = (error: Error | null, stdout: string, stderr: string) => void;
+
+function resolveExecFileCallback(maybeOptions: unknown, maybeCallback: unknown): ExecFileCallback {
+  if (typeof maybeOptions === 'function') {
+    return maybeOptions as ExecFileCallback;
+  }
+  if (typeof maybeCallback === 'function') {
+    return maybeCallback as ExecFileCallback;
+  }
+  throw new TypeError('callback is not a function');
+}
+
+function mockExecSuccess(stdout = '', stderr = ''): void {
+  mockExecFile.mockImplementation(
+    (_file: unknown, _args: unknown, maybeOptions: unknown, maybeCallback: unknown) => {
+      const callback = resolveExecFileCallback(maybeOptions, maybeCallback);
+      callback(null, stdout, stderr);
+    }
+  );
+}
+
+function mockExecFailure(error: Error, stdout = '', stderr = ''): void {
+  mockExecFile.mockImplementation(
+    (_file: unknown, _args: unknown, maybeOptions: unknown, maybeCallback: unknown) => {
+      const callback = resolveExecFileCallback(maybeOptions, maybeCallback);
+      callback(error, stdout, stderr);
+    }
+  );
+}
 
 jest.unstable_mockModule('node:child_process', () => ({
   execFile: mockExecFile,
@@ -28,32 +62,27 @@ describe('Git Worktree Utilities', () => {
     });
 
     it('calls git worktree add <path> <branch>', async () => {
-      mockExecFile.mockImplementation((_file: unknown, _args: unknown, callback: any) => {
-        callback(null, '', '');
-      });
+      mockExecSuccess();
 
       await addWorktree('/tmp/worktree-test', 'feature/my-branch');
 
       expect(mockExecFile).toHaveBeenCalledWith(
         'git',
         ['worktree', 'add', '/tmp/worktree-test', 'feature/my-branch'],
+        expect.objectContaining(EXEC_GIT_OPTIONS),
         expect.any(Function),
       );
     });
 
     it('resolves to undefined when execFile succeeds (exit 0)', async () => {
-      mockExecFile.mockImplementation((_file: unknown, _args: unknown, callback: any) => {
-        callback(null, '', '');
-      });
+      mockExecSuccess();
 
       await expect(addWorktree('/tmp/worktree-success', 'main')).resolves.toBeUndefined();
     });
 
     it('rejects when execFile reports error', async () => {
       const error = new Error('fatal: worktree creation failed');
-      mockExecFile.mockImplementation((_file: unknown, _args: unknown, callback: any) => {
-        callback(error, '', '');
-      });
+      mockExecFailure(error);
 
       await expect(addWorktree('/tmp/worktree-fail', 'main')).rejects.toThrow(
         'fatal: worktree creation failed',
@@ -67,32 +96,27 @@ describe('Git Worktree Utilities', () => {
     });
 
     it('calls git worktree remove <path> --force', async () => {
-      mockExecFile.mockImplementation((_file: unknown, _args: unknown, callback: any) => {
-        callback(null, '', '');
-      });
+      mockExecSuccess();
 
       await removeWorktree('/tmp/worktree-to-remove');
 
       expect(mockExecFile).toHaveBeenCalledWith(
         'git',
         ['worktree', 'remove', '/tmp/worktree-to-remove', '--force'],
+        expect.objectContaining(EXEC_GIT_OPTIONS),
         expect.any(Function),
       );
     });
 
     it('resolves to undefined when execFile succeeds', async () => {
-      mockExecFile.mockImplementation((_file: unknown, _args: unknown, callback: any) => {
-        callback(null, '', '');
-      });
+      mockExecSuccess();
 
       await expect(removeWorktree('/tmp/worktree-cleanup')).resolves.toBeUndefined();
     });
 
     it('rejects when execFile reports error', async () => {
       const error = new Error('fatal: worktree not found');
-      mockExecFile.mockImplementation((_file: unknown, _args: unknown, callback: any) => {
-        callback(error, '', '');
-      });
+      mockExecFailure(error);
 
       await expect(removeWorktree('/tmp/worktree-missing')).rejects.toThrow(
         'fatal: worktree not found',
