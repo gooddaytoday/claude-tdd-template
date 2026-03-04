@@ -10,6 +10,11 @@ const config: Config = {
   },
   clearMocks: true,
   restoreMocks: true,
+  collectCoverageFrom: [
+    '<rootDir>/.claude/hooks/**/*.ts',
+  ],
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov', 'clover'],
 };
 
 export default config;

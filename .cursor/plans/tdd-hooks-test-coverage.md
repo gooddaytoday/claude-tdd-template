@@ -660,7 +660,7 @@ describe('telemetry logging', () => {
 
 ---
 
-## Phase 6: user-prompt-skill-eval.ts
+## [DONE] Phase 6: user-prompt-skill-eval.ts
 
 ### Файл: `tests/unit/hooks/skill-eval.test.ts`
 
@@ -761,7 +761,7 @@ describe('output format', () => {
 
 ---
 
-## Phase 7: Integration Tests (stdin/stdout)
+## [DONE] Phase 7: Integration Tests (stdin/stdout)
 
 Тестирование хуков как subprocess: pipe JSON в stdin, читать stdout + exit code.
 

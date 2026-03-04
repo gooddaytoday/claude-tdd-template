@@ -4,6 +4,7 @@
   "description": "TDD Integration Harness for Claude Code and Cursor IDE",
   "scripts": {
     "test": "jest --config jest.config.ts",
+    "test:coverage": "jest --config jest.config.ts --coverage",
     "test:hooks": "jest --config jest.config.ts --testPathPatterns=hooks",
     "test:hooks:watch": "jest --config jest.config.ts --testPathPatterns=hooks --watch"
   },
