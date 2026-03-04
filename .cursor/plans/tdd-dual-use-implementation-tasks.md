@@ -468,7 +468,7 @@ main();
 
 ## Phase 4: Cursor Rules
 
-### 4.1 Создать `.cursor/rules/tdd-guard.mdc`
+### [DONE] 4.1 Создать `.cursor/rules/tdd-guard.mdc`
 
 **Цель**: Always-applied правило с TDD discipline enforcement. Поведенческий слой поверх технических hooks.
 
@@ -515,7 +515,7 @@ Full orchestration: `.claude/skills/tdd-integration/skill.md`
 
 ---
 
-### 4.2 Создать `.cursor/rules/tdd-workflow.mdc`
+### [DONE] 4.2 Создать `.cursor/rules/tdd-workflow.mdc`
 
 **Цель**: Agent Requested правило, активируемое при запросах на реализацию новых features. Компенсирует отсутствие auto-activation hook в Cursor.
 
