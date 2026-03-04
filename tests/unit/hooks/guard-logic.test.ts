@@ -377,3 +377,37 @@ describe('extractSubagentName', () => {
     expect(extractSubagentName({ subagent_type: '' })).toBeNull();
   });
 });
+
+// 1.12 Additional edge cases for improved coverage
+describe('guard-logic edge cases', () => {
+  it('isTestFile with Windows backslashes in nested path', () => {
+    expect(isTestFile('src\\tests\\unit\\foo.test.ts')).toBe(true);
+  });
+
+  it('normalizePath with multiple leading ..//', () => {
+    expect(normalizePath('../../tests/foo.ts')).toBe('tests/foo.ts');
+  });
+
+  it('contentHasSkipPatterns with multiple spaces in if(false)', () => {
+    expect(contentHasSkipPatterns('if  (  false  )  { }')).toBe(true);
+  });
+
+  it('bashCommandWritesToTests with tee and -a flag', () => {
+    expect(bashCommandWritesToTests('cat file | tee -a tests/foo.ts')).toBe(true);
+  });
+
+  it('bashCommandWritesToJestConfig with cp and nested path', () => {
+    expect(bashCommandWritesToJestConfig('cp backup jest.unit.config.js')).toBe(true);
+  });
+
+  it('redactSensitiveSegment with PASSWORD in uppercase', () => {
+    const result = redactSensitiveSegment('MY_PASSWORD=secret123');
+    expect(result).not.toContain('secret123');
+    expect(result).toContain('<REDACTED>');
+  });
+
+  it('sanitizeCommand with very long command normalizes spaces', () => {
+    const result = sanitizeCommand('echo    hello    world    with    many    spaces');
+    expect(result.target_file).not.toContain('    ');
+  });
+});

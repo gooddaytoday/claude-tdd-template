@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { agentTypeToPhase, logTimingEvent, SubagentTimingEvent } from '../../../.claude/hooks/tdd-telemetry-hook';
+import { agentTypeToPhase, logTimingEvent, SubagentTimingEvent, getProjectRoot } from '../../../.claude/hooks/tdd-telemetry-hook';
 
 let tmpDir: string;
 
@@ -145,3 +145,47 @@ describe('logTimingEvent', () => {
     expect(() => logTimingEvent(event, '/dev/null/impossible/path')).not.toThrow();
   });
 });
+
+// ============================================================================
+// 5.3 getProjectRoot for telemetry -- 4 test cases
+// ============================================================================
+describe('getProjectRoot for telemetry', () => {
+  it('returns cwd when .claude exists', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'telemetry-proj-root-'));
+    fs.mkdirSync(path.join(tempRoot, '.claude'), { recursive: true });
+
+    const result = getProjectRoot(tempRoot);
+    expect(result).toBe(tempRoot);
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  it('walks up directories to find .claude', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'telemetry-walk-up-'));
+    const nestedDir = path.join(tempRoot, 'src', 'deeply', 'nested');
+    fs.mkdirSync(nestedDir, { recursive: true });
+    fs.mkdirSync(path.join(tempRoot, '.claude'), { recursive: true });
+
+    const result = getProjectRoot(nestedDir);
+    expect(result).toBe(tempRoot);
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  it('returns original cwd when .claude not found', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'telemetry-no-claude-'));
+    const nestedDir = path.join(tempRoot, 'a', 'b', 'c');
+    fs.mkdirSync(nestedDir, { recursive: true });
+
+    const result = getProjectRoot(nestedDir);
+    expect(result).toBe(nestedDir);
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  it('stops when reaching filesystem root', () => {
+    const result = getProjectRoot('/');
+    expect(result).toBe('/');
+  });
+});
+

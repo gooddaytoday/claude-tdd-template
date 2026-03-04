@@ -107,7 +107,7 @@ const BASH_WRITE_ENFORCEMENT_PATTERNS: RegExp[] = [
 // Semantic test-disabling patterns to detect inside test file content
 const SKIP_PATTERNS = /\b(?:describe|it|test)\.(?:skip|only)\b|\bx(?:describe|it|test)\b|\bif\s*\(\s*false\s*\)/;
 
-function getProjectRoot(): string {
+export function getProjectRoot(): string {
   let cwd = process.cwd();
   for (let i = 0; i < 10; i++) {
     if (existsSync(join(cwd, '.claude'))) {
@@ -490,7 +490,7 @@ export function handleSubagentStart(agentType?: string): HookOutput {
   return {};
 }
 
-function main(): void {
+export function main(): void {
   try {
     const inputData = JSON.parse(readFileSync(0, 'utf-8')) as HookInput;
 

@@ -70,7 +70,7 @@ export function classify(prompt: string): Decision {
   return 'skip';
 }
 
-function main(): void {
+export function main(): void {
   let inputData: HookInput;
   try {
     inputData = JSON.parse(readFileSync(0, 'utf-8')) as HookInput;

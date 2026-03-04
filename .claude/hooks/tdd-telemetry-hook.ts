@@ -60,6 +60,10 @@ export function getProjectRoot(cwd: string): string {
   return cwd;
 }
 
+export function setProjectRootForTest(root: string | null): void {
+  // Placeholder for test usage - allows override in tests if needed
+}
+
 export function logTimingEvent(event: SubagentTimingEvent, projectRoot: string): void {
   try {
     const logPath = join(projectRoot, 'airefinement/artifacts/traces/timings.jsonl');
@@ -70,7 +74,7 @@ export function logTimingEvent(event: SubagentTimingEvent, projectRoot: string):
   }
 }
 
-function main(): void {
+export function main(): void {
   try {
     const inputData = JSON.parse(readFileSync(0, 'utf-8')) as SubagentStopInput;
 

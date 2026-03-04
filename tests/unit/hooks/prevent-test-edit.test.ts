@@ -13,6 +13,7 @@ import {
   handleSubagentStop,
   logViolationEvent,
   ViolationEvent,
+  getProjectRoot,
 } from '../../../.claude/hooks/prevent-test-edit';
 
 let tmpDir: string;
@@ -486,3 +487,174 @@ describe('handler violation logging', () => {
     expect(parsed.reason).toBeDefined();
   });
 });
+
+// ============================================================================
+// 4.10 getProjectRoot -- 5 test cases
+// ============================================================================
+describe('getProjectRoot', () => {
+  it('returns current directory when .claude exists', () => {
+    const result = getProjectRoot();
+    const isValid = fs.existsSync(path.join(result, '.claude'));
+    expect(isValid).toBe(true);
+  });
+
+  it('walks up directories to find .claude', () => {
+    // Create temp nested structure
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'project-root-test-'));
+    const nestedDir = path.join(tempRoot, 'src', 'deeply', 'nested');
+    fs.mkdirSync(nestedDir, { recursive: true });
+    fs.mkdirSync(path.join(tempRoot, '.claude'), { recursive: true });
+
+    // Mock cwd to nested directory
+    const originalCwd = process.cwd;
+    jest.spyOn(process, 'cwd').mockReturnValue(nestedDir);
+
+    try {
+      const result = getProjectRoot();
+      expect(result).toBe(tempRoot);
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('returns original cwd when .claude not found after 10 iterations', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'no-claude-test-'));
+    const nestedDir = path.join(tempRoot, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k');
+    fs.mkdirSync(nestedDir, { recursive: true });
+
+    const originalCwd = process.cwd;
+    jest.spyOn(process, 'cwd').mockReturnValue(nestedDir);
+
+    try {
+      const result = getProjectRoot();
+      expect(result).toBe(nestedDir);
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('stops when reaching filesystem root', () => {
+    // This test verifies the parent === cwd check
+    const originalCwd = process.cwd;
+    jest.spyOn(process, 'cwd').mockReturnValue('/');
+
+    try {
+      const result = getProjectRoot();
+      expect(result).toBe('/');
+    } finally {
+      jest.restoreAllMocks();
+    }
+  });
+
+  it('returns cwd after 10 iterations max', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'max-iter-test-'));
+    const nestedDir = path.join(tempRoot, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l');
+    fs.mkdirSync(nestedDir, { recursive: true });
+
+    const originalCwd = process.cwd;
+    jest.spyOn(process, 'cwd').mockReturnValue(nestedDir);
+
+    try {
+      const result = getProjectRoot();
+      // After 10 iterations without finding .claude, it returns original cwd
+      expect(result).toBe(nestedDir);
+    } finally {
+      jest.restoreAllMocks();
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+// ============================================================================
+// 4.11 readState edge cases -- 3 test cases
+// ============================================================================
+describe('readState - edge cases', () => {
+  it('returns unknown state when TTL expired (age > STATE_TTL_MS)', () => {
+    // Write a state with a very old timestamp
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000 - 1000).toISOString();
+    writeState({
+      activeSubagent: 'tdd-implementer',
+      lastUpdated: twoHoursAgo,
+      sessionId: 'test-session-001',
+    });
+
+    const result = readState();
+    expect(result.activeSubagent).toBe('unknown');
+  });
+
+  it('returns main when session ID differs from current session', () => {
+    // Write a state for a different session
+    writeState({
+      activeSubagent: 'tdd-implementer',
+      lastUpdated: new Date().toISOString(),
+      sessionId: 'old-session-999',
+    });
+
+    // Set current session to different value
+    setCurrentSessionId('new-session-001');
+
+    const result = readState();
+    expect(result.activeSubagent).toBe('main');
+  });
+
+  it('returns unknown state when file is missing', () => {
+    // Ensure state file doesn't exist
+    const statePath = path.join(tmpDir, '.claude/.guard-state.json');
+    if (fs.existsSync(statePath)) {
+      fs.unlinkSync(statePath);
+    }
+
+    const result = readState();
+    expect(result.activeSubagent).toBe('unknown');
+  });
+
+  it('returns unknown state when file contains invalid JSON', () => {
+    // Write corrupt JSON to state file
+    const statePath = path.join(tmpDir, '.claude/.guard-state.json');
+    fs.mkdirSync(path.dirname(statePath), { recursive: true });
+    fs.writeFileSync(statePath, '{invalid json}', 'utf-8');
+
+    const result = readState();
+    expect(result.activeSubagent).toBe('unknown');
+  });
+
+  it('returns unknown state when timestamp is invalid', () => {
+    // Write a state with invalid timestamp
+    const statePath = path.join(tmpDir, '.claude/.guard-state.json');
+    fs.mkdirSync(path.dirname(statePath), { recursive: true });
+    fs.writeFileSync(
+      statePath,
+      JSON.stringify({
+        activeSubagent: 'tdd-implementer',
+        lastUpdated: 'not-a-date',
+      }),
+      'utf-8'
+    );
+
+    const result = readState();
+    expect(result.activeSubagent).toBe('unknown');
+  });
+});
+
+// ============================================================================
+// 4.12 handleFileEdit - MultiEdit with edits array -- 1 test case
+// ============================================================================
+describe('handleFileEdit - MultiEdit edits array', () => {
+  it('ASK: MultiEdit with edits containing skip pattern', () => {
+    setupState('tdd-test-writer');
+    const result = handleFileEdit('MultiEdit', {
+      file_path: 'tests/unit/foo.test.ts',
+      edits: [
+        { old_string: 'old1', new_string: 'describe.skip("suite", () => {})' },
+        { old_string: 'old2', new_string: 'updated' },
+      ],
+    });
+
+    expect(result.hookSpecificOutput?.permissionDecision).toBe('ask');
+    expect(result.hookSpecificOutput?.permissionDecisionReason).toContain('skip');
+  });
+});
+
+
