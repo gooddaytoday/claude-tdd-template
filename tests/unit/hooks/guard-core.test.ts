@@ -3,12 +3,14 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import {
   detectEnvironment,
+  logViolationEvent,
   readState,
   writeState,
   isTestFile,
   isJestConfigFile,
   isEnforcementFile,
   getProjectRoot,
+  type ViolationEvent,
 } from '../../../.claude/hooks/lib/guard-core';
 
 interface GuardState {
@@ -148,5 +150,96 @@ describe('guard-core module exports', () => {
 
   it('exports getProjectRoot as a function', () => {
     expect(typeof getProjectRoot).toBe('function');
+  });
+
+  it('exports logViolationEvent as a function', () => {
+    expect(typeof logViolationEvent).toBe('function');
+  });
+});
+
+// ============================================================================
+// logViolationEvent environment enrichment
+// ============================================================================
+describe('logViolationEvent environment enrichment', () => {
+  const violationsPath = () =>
+    path.join(tmpDir, 'airefinement/artifacts/traces/violations.jsonl');
+
+  function makeBaseEvent(): Omit<ViolationEvent, 'environment'> {
+    return {
+      timestamp: new Date().toISOString(),
+      agent: 'tdd-implementer',
+      attempted_action: 'Write',
+      target_file: 'tests/unit/some.test.ts',
+      blocked: true,
+      reason: 'Writing to test files is restricted',
+    };
+  }
+
+  it('writes environment: claude-code when CURSOR_VERSION is not set', () => {
+    delete process.env.CURSOR_VERSION;
+
+    logViolationEvent(makeBaseEvent() as ViolationEvent);
+
+    const line = fs.readFileSync(violationsPath(), 'utf-8').trim();
+    const written = JSON.parse(line) as Record<string, unknown>;
+    expect(written).toHaveProperty('environment', 'claude-code');
+  });
+
+  it('writes environment: cursor when CURSOR_VERSION is set', () => {
+    process.env.CURSOR_VERSION = '1.7.2';
+
+    logViolationEvent(makeBaseEvent() as ViolationEvent);
+
+    const line = fs.readFileSync(violationsPath(), 'utf-8').trim();
+    const written = JSON.parse(line) as Record<string, unknown>;
+    expect(written).toHaveProperty('environment', 'cursor');
+  });
+
+  it('preserves existing environment: cursor when event already has environment set', () => {
+    // CURSOR_VERSION is intentionally NOT set — detectEnvironment() would return 'claude-code'
+    // but the event already carries environment: 'cursor', so it must NOT be overwritten
+    delete process.env.CURSOR_VERSION;
+
+    const event = { ...makeBaseEvent(), environment: 'cursor' as const };
+    logViolationEvent(event as ViolationEvent);
+
+    const line = fs.readFileSync(violationsPath(), 'utf-8').trim();
+    const written = JSON.parse(line) as Record<string, unknown>;
+    expect(written).toHaveProperty('environment', 'cursor');
+  });
+
+  it('preserves existing environment: claude-code when CURSOR_VERSION is set', () => {
+    // CURSOR_VERSION is set — detectEnvironment() would return 'cursor'
+    // but the event already has environment: 'claude-code', so it must NOT be overwritten
+    process.env.CURSOR_VERSION = '2.0';
+
+    const event = { ...makeBaseEvent(), environment: 'claude-code' as const };
+    logViolationEvent(event as ViolationEvent);
+
+    const line = fs.readFileSync(violationsPath(), 'utf-8').trim();
+    const written = JSON.parse(line) as Record<string, unknown>;
+    expect(written).toHaveProperty('environment', 'claude-code');
+  });
+});
+
+// ============================================================================
+// ViolationEvent type compatibility
+// ============================================================================
+describe('ViolationEvent type shape', () => {
+  it('ViolationEvent accepts optional environment field', () => {
+    // TypeScript-level assignability check.
+    // Once ViolationEvent has environment?: 'claude-code' | 'cursor',
+    // the object below must satisfy the interface without any cast.
+    const event = {
+      timestamp: new Date().toISOString(),
+      agent: 'type-check',
+      attempted_action: 'Write',
+      target_file: 'src/file.ts',
+      blocked: false,
+      reason: 'type-level test',
+      environment: 'cursor' as 'claude-code' | 'cursor',
+    } satisfies ViolationEvent;
+
+    expect(event.environment).toBe('cursor');
   });
 });

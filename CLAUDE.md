@@ -113,6 +113,7 @@ This section is for project-specific module documentation. Create CLAUDE.md file
 
 - [CLI Entry Point](airefinement/bin/CLAUDE.md) - Commander-based CLI with 5 commands (analyze, refine, eval, report, metrics)
 - [Eval Module](airefinement/src/eval/CLAUDE.md) - Golden Dataset reader, eval infrastructure, deterministic graders, LLM-judge grader, Spearman calibration, composite grader, A/B eval runner, result comparator, and markdown reporter with history: loadGoldenDataset, gradeTestRunner, gradeComposite, runEval, buildComparisonReport, formatMarkdownReport, saveReport, loadExperimentHistory, formatHistoryTable
+- [Hooks Module](.claude/hooks/CLAUDE.md) - TDD Guard & Telemetry hooks: prevent-test-edit.ts (blocks unauthorized test writes), tdd-telemetry-hook.ts (phase timing), lib/guard-core.ts (shared state/detection logic); dual-environment Claude Code + Cursor
 - [Metrics Module](airefinement/src/metrics/CLAUDE.md) - Metrics evaluation and threshold comparison
 - [Refinement Module](airefinement/src/refinement/CLAUDE.md) - AI self-improvement loop: diagnosis prompt building, experiment branch management, scope-restricted Claude CLI invocation
 

@@ -59,8 +59,10 @@ interface HookInput {
   tool_name: string;
   tool_input: Record<string, unknown>;
   cwd: string;
-  session_id: string;
+  session_id?: string;
   agent_type?: string;
+  conversation_id?: string;
+  subagent_type?: string;
 }
 
 export interface HookOutput {
@@ -310,20 +312,54 @@ export function handleSubagentStart(agentType?: string): HookOutput {
   return {};
 }
 
+export type PermissionDecision = 'allow' | 'deny' | 'ask';
+
+export interface FormatOutputResult {
+  json: string;
+  exitCode: number;
+}
+
+export function formatOutput(decision: PermissionDecision, reason?: string): FormatOutputResult {
+  const env = detectEnvironment();
+
+  if (env === 'cursor') {
+    const cursorDecision = decision === 'ask' ? 'deny' : decision;
+    return {
+      json: JSON.stringify({ decision: cursorDecision, reason: reason || '' }),
+      exitCode: decision === 'deny' ? 2 : 0,
+    };
+  }
+
+  // Claude Code format
+  return {
+    json: JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: decision,
+        ...(reason ? { permissionDecisionReason: reason } : {}),
+      },
+    }),
+    exitCode: 0,
+  };
+}
+
 export function main(): void {
   try {
     const inputData = JSON.parse(readFileSync(0, 'utf-8')) as HookInput;
 
     const hookEventName = inputData.hook_event_name || '';
-    const toolName = inputData.tool_name || '';
+    const normalizedEvent = hookEventName.toLowerCase();
+    const rawToolName = inputData.tool_name || '';
+    const toolName = rawToolName === 'Shell' ? 'Bash' : rawToolName;
     const toolInput = inputData.tool_input || {};
-    currentSessionId = inputData.session_id || undefined;
+    currentSessionId = inputData.session_id || inputData.conversation_id || undefined;
+    const agentType = inputData.agent_type || inputData.subagent_type || undefined;
 
     let result: HookOutput;
 
-    if (hookEventName === 'SubagentStart') {
-      result = handleSubagentStart(inputData.agent_type);
-    } else if (hookEventName === 'SubagentStop') {
+    if (normalizedEvent === 'subagentstart') {
+      result = handleSubagentStart(agentType);
+    } else if (normalizedEvent === 'subagentstop') {
       result = handleSubagentStop();
     } else if (toolName === 'Task') {
       result = handleTaskToolUse(toolInput);
@@ -340,18 +376,20 @@ export function main(): void {
       };
     }
 
-    stdout.write(JSON.stringify(result));
-    process.exit(0);
+    if (result.hookSpecificOutput?.permissionDecision !== undefined) {
+      const decision = result.hookSpecificOutput.permissionDecision;
+      const reason = result.hookSpecificOutput.permissionDecisionReason;
+      const formatted = formatOutput(decision, reason);
+      stdout.write(formatted.json);
+      process.exit(formatted.exitCode);
+    } else {
+      stdout.write(JSON.stringify(result));
+      process.exit(0);
+    }
   } catch {
-    const fallback = {
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'ask',
-        permissionDecisionReason: '⚠️ TDD Guard: Hook encountered an unexpected error. Please verify this action is safe before proceeding.',
-      },
-    };
-    stdout.write(JSON.stringify(fallback));
-    process.exit(0);
+    const formatted = formatOutput('ask', '⚠️ TDD Guard: Hook encountered an unexpected error. Please verify this action is safe before proceeding.');
+    stdout.write(formatted.json);
+    process.exit(formatted.exitCode);
   }
 }
 

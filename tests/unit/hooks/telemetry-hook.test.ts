@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { agentTypeToPhase, logTimingEvent, SubagentTimingEvent, getProjectRoot } from '../../../.claude/hooks/tdd-telemetry-hook';
 
 let tmpDir: string;
@@ -186,6 +187,242 @@ describe('getProjectRoot for telemetry', () => {
   it('stops when reaching filesystem root', () => {
     const result = getProjectRoot('/');
     expect(result).toBe('/');
+  });
+});
+
+// ============================================================================
+// Helper: run tdd-telemetry-hook.ts as subprocess for integration-style tests
+// ============================================================================
+
+function getRepoRootForHook(): string {
+  let current = process.cwd();
+  for (let i = 0; i < 10; i++) {
+    if (fs.existsSync(path.join(current, 'package.json'))) {
+      const content = fs.readFileSync(path.join(current, 'package.json'), 'utf-8');
+      if (content.includes('claude-tdd-template')) return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return process.cwd();
+}
+
+interface HookRunResult {
+  exitCode: number;
+  timingsPath: string;
+  projectDir: string;
+}
+
+function runTelemetryHook(
+  input: Record<string, unknown>,
+  env: Record<string, string | undefined> = {}
+): HookRunResult {
+  const repoRoot = getRepoRootForHook();
+  const hookPath = path.resolve(repoRoot, '.claude/hooks/tdd-telemetry-hook.ts');
+
+  // Each call gets its own isolated project dir so tests don't interfere
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'telemetry-hook-'));
+  fs.mkdirSync(path.join(projectDir, '.claude'), { recursive: true });
+
+  // Inject cwd so the hook writes timings relative to projectDir
+  const inputWithCwd = { cwd: projectDir, ...input };
+
+  spawnSync('npx', ['--prefix', repoRoot, 'tsx', hookPath], {
+    cwd: projectDir,
+    input: JSON.stringify(inputWithCwd),
+    encoding: 'utf-8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      JEST_WORKER_ID: undefined,
+      ...env,
+    },
+  });
+
+  return {
+    exitCode: 0,
+    timingsPath: path.join(projectDir, 'airefinement/artifacts/traces/timings.jsonl'),
+    projectDir,
+  };
+}
+
+function cleanupHookDir(projectDir: string): void {
+  fs.rmSync(projectDir, { recursive: true, force: true });
+}
+
+// ============================================================================
+// 5.4 SubagentTimingEvent environment field -- 3 test cases
+// ============================================================================
+describe('SubagentTimingEvent environment field', () => {
+  const savedCursorVersion = process.env.CURSOR_VERSION;
+
+  afterEach(() => {
+    // Restore CURSOR_VERSION after each test
+    if (savedCursorVersion === undefined) {
+      delete process.env.CURSOR_VERSION;
+    } else {
+      process.env.CURSOR_VERSION = savedCursorVersion;
+    }
+  });
+
+  it('logTimingEvent writes environment: claude-code in JSON when CURSOR_VERSION not set', () => {
+    delete process.env.CURSOR_VERSION;
+
+    const event = makeTimingEvent();
+    logTimingEvent(event, tmpDir);
+
+    const logPath = path.join(tmpDir, 'airefinement/artifacts/traces/timings.jsonl');
+    const content = fs.readFileSync(logPath, 'utf-8');
+    const parsed = JSON.parse(content.trim()) as Record<string, unknown>;
+
+    expect(parsed.environment).toBe('claude-code');
+  });
+
+  it('logTimingEvent writes environment: cursor in JSON when CURSOR_VERSION is set', () => {
+    process.env.CURSOR_VERSION = '1.0';
+
+    const event = makeTimingEvent();
+    logTimingEvent(event, tmpDir);
+
+    const logPath = path.join(tmpDir, 'airefinement/artifacts/traces/timings.jsonl');
+    const content = fs.readFileSync(logPath, 'utf-8');
+    const parsed = JSON.parse(content.trim()) as Record<string, unknown>;
+
+    expect(parsed.environment).toBe('cursor');
+  });
+
+  it('logTimingEvent preserves explicit environment: cursor even when CURSOR_VERSION not set', () => {
+    delete process.env.CURSOR_VERSION;
+
+    // Cast needed because SubagentTimingEvent does not yet have environment field
+    const event = { ...makeTimingEvent(), environment: 'cursor' } as unknown as SubagentTimingEvent;
+    logTimingEvent(event, tmpDir);
+
+    const logPath = path.join(tmpDir, 'airefinement/artifacts/traces/timings.jsonl');
+    const content = fs.readFileSync(logPath, 'utf-8');
+    const parsed = JSON.parse(content.trim()) as Record<string, unknown>;
+
+    // Must preserve the explicit value, NOT overwrite it with detectEnvironment() → 'claude-code'
+    expect(parsed.environment).toBe('cursor');
+    expect(parsed.environment).not.toBe('claude-code');
+  });
+});
+
+// ============================================================================
+// 5.5 main() Cursor input parsing -- 2 test cases (via spawnSync)
+// ============================================================================
+describe('main() Cursor input parsing', () => {
+  jest.setTimeout(30000);
+
+  it('accepts subagent_type (Cursor field) as fallback for agent_type', () => {
+    const { timingsPath, projectDir } = runTelemetryHook({
+      hook_event_name: 'SubagentStop',
+      // NOTE: no agent_type — Cursor sends subagent_type
+      subagent_type: 'tdd-implementer',
+      session_id: 'test-cursor-001',
+      transcript_path: '/tmp/transcript',
+      permission_mode: 'default',
+      agent_id: 'agent-001',
+      agent_transcript_path: '/tmp/agent-transcript',
+    });
+
+    try {
+      expect(fs.existsSync(timingsPath)).toBe(true);
+      const content = fs.readFileSync(timingsPath, 'utf-8');
+      const parsed = JSON.parse(content.trim()) as Record<string, unknown>;
+      expect(parsed.agent).toBe('tdd-implementer');
+    } finally {
+      cleanupHookDir(projectDir);
+    }
+  });
+
+  it('accepts camelCase hook_event_name subagentStop (Cursor format) instead of SubagentStop', () => {
+    const { timingsPath, projectDir } = runTelemetryHook({
+      hook_event_name: 'subagentStop',
+      agent_type: 'tdd-implementer',
+      session_id: 'test-cursor-002',
+      transcript_path: '/tmp/transcript',
+      permission_mode: 'default',
+      agent_id: 'agent-001',
+      agent_transcript_path: '/tmp/agent-transcript',
+    });
+
+    try {
+      // camelCase variant must NOT be skipped — timings file must be created
+      expect(fs.existsSync(timingsPath)).toBe(true);
+      const content = fs.readFileSync(timingsPath, 'utf-8');
+      const lines = content.trim().split('\n').filter(Boolean);
+      expect(lines.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      cleanupHookDir(projectDir);
+    }
+  });
+});
+
+// ============================================================================
+// 5.6 started_at computed from duration field -- 2 test cases (via spawnSync)
+// ============================================================================
+describe('main() started_at from duration', () => {
+  jest.setTimeout(30000);
+
+  it('computes started_at = Date.now() - duration when duration field is present', () => {
+    const duration = 5000;
+    const beforeMs = Date.now();
+
+    const { timingsPath, projectDir } = runTelemetryHook({
+      hook_event_name: 'SubagentStop',
+      agent_type: 'tdd-implementer',
+      duration,
+      session_id: 'test-duration-001',
+      transcript_path: '/tmp/transcript',
+      permission_mode: 'default',
+      agent_id: 'agent-001',
+      agent_transcript_path: '/tmp/agent-transcript',
+    });
+
+    const afterMs = Date.now();
+
+    try {
+      expect(fs.existsSync(timingsPath)).toBe(true);
+      const content = fs.readFileSync(timingsPath, 'utf-8');
+      const parsed = JSON.parse(content.trim()) as Record<string, unknown>;
+
+      expect(typeof parsed.started_at).toBe('string');
+      expect((parsed.started_at as string).length).toBeGreaterThan(0);
+
+      // started_at must be approximately beforeMs - duration (within 2000ms tolerance)
+      const startedAtMs = new Date(parsed.started_at as string).getTime();
+      const expectedMin = beforeMs - duration - 2000;
+      const expectedMax = afterMs - duration + 2000;
+      expect(startedAtMs).toBeGreaterThanOrEqual(expectedMin);
+      expect(startedAtMs).toBeLessThanOrEqual(expectedMax);
+    } finally {
+      cleanupHookDir(projectDir);
+    }
+  });
+
+  it('leaves started_at as empty string when no duration field is present', () => {
+    const { timingsPath, projectDir } = runTelemetryHook({
+      hook_event_name: 'SubagentStop',
+      agent_type: 'tdd-implementer',
+      // NOTE: no duration field
+      session_id: 'test-noduration-001',
+      transcript_path: '/tmp/transcript',
+      permission_mode: 'default',
+      agent_id: 'agent-001',
+      agent_transcript_path: '/tmp/agent-transcript',
+    });
+
+    try {
+      expect(fs.existsSync(timingsPath)).toBe(true);
+      const content = fs.readFileSync(timingsPath, 'utf-8');
+      const parsed = JSON.parse(content.trim()) as Record<string, unknown>;
+
+      expect(parsed.started_at).toBe('');
+    } finally {
+      cleanupHookDir(projectDir);
+    }
   });
 });
 

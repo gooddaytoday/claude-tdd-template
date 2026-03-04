@@ -97,9 +97,9 @@ export function detectEnvironment(): 'claude-code' | 'cursor' {
 
 ---
 
-## Phase 2: Dual-Format Output
+## [DONE] Phase 2: Dual-Format Output
 
-### 2.1 Добавить environment-aware output formatting в `prevent-test-edit.ts`
+### [DONE] 2.1 Добавить environment-aware output formatting в `prevent-test-edit.ts`
 
 **Цель**: Хук автоматически определяет среду и возвращает ответ в правильном формате.
 
@@ -164,44 +164,83 @@ process.exit(formatted.exitCode);
 
 **Критерий готовности**: При `CURSOR_VERSION=1.0` хук возвращает `{ decision: "deny", reason: "..." }` и exit code 2. Без `CURSOR_VERSION` -- возвращает Claude Code формат с exit code 0.
 
+**Статус**: DONE (2026-03-04)
+
+**Реализация**:
+
+Изменённые файлы:
+- `.claude/hooks/prevent-test-edit.ts` — GREEN/REFACTOR
+- `tests/unit/hooks/prevent-test-edit.test.ts` — RED
+
+Что добавлено в `prevent-test-edit.ts`:
+- `export type PermissionDecision = 'allow' | 'deny' | 'ask'` — экспортируемый тип решения
+- `export interface FormatOutputResult { json: string; exitCode: number }` — результат форматирования
+- `export function formatOutput(decision, reason?)` — форматирует ответ под среду:
+  - Cursor (`CURSOR_VERSION` установлен): `{decision, reason}` JSON; `'ask'` → `'deny'`; exitCode 2 для deny, 0 иначе
+  - Claude Code: `{hookSpecificOutput:{hookEventName:'PreToolUse', permissionDecision, permissionDecisionReason?}}` JSON; exitCode всегда 0
+
+Архитектурные решения:
+- `formatOutput` — pure function без side effects, тестируется в изоляции
+- `'ask'` нормализуется в `'deny'` для Cursor (Cursor не поддерживает `ask`)
+- `exitCode: 2` сигнализирует Cursor о блокировке (отличный от 0 = fail-closed)
+- Интеграция с `main()` (замена прямых `stdout.write` + `process.exit`) отложена на subtask 2.2
+- `HookOutput.permissionDecision` inline-тип должен быть заменён на `PermissionDecision` в subtask 2.2
+
 ---
 
-### 2.2 Расширить input parsing для Cursor-совместимости
+### [DONE] 2.2 Расширить input parsing для Cursor-совместимости
 
 **Цель**: Хук корректно читает input как от Claude Code, так и от Cursor.
 
-**Изменения в `main()`**:
+**Статус**: ✅ Реализовано (RED → GREEN → REFACTOR → CODE_REVIEW → ARCH_REVIEW — все фазы пройдены)
 
+**Изменённые файлы**:
+- `.claude/hooks/prevent-test-edit.ts` — нормализация input parsing + интеграция `formatOutput()` в `main()`
+- `tests/integration/hooks/hook-stdio.test.ts` — интеграционные тесты stdio поведения хука
+
+#### Что реализовано
+
+**1. `HookInput` interface** — расширен Cursor-специфичными полями:
 ```typescript
-const inputData = JSON.parse(readFileSync(0, 'utf-8'));
+interface HookInput {
+  hook_event_name: string;
+  tool_name: string;
+  tool_input: Record<string, unknown>;
+  cwd: string;
+  session_id?: string;       // Claude Code
+  agent_type?: string;       // Claude Code
+  conversation_id?: string;  // Cursor: вместо session_id
+  subagent_type?: string;    // Cursor: вместо agent_type
+}
+```
 
-// Normalize hook event name: Cursor uses camelCase, Claude Code uses PascalCase
-const hookEventName = inputData.hook_event_name || inputData.hookEventName || '';
-const normalizedEvent = hookEventName.toLowerCase();
-
-// Normalize tool name: Cursor maps Edit -> Write, Bash -> Shell
+**2. Нормализация input в `main()`**:
+```typescript
+const hookEventName = inputData.hook_event_name || '';
+const normalizedEvent = hookEventName.toLowerCase(); // camelCase + PascalCase оба работают
 const rawToolName = inputData.tool_name || '';
-const toolName = rawToolName === 'Shell' ? 'Bash' : rawToolName;
-
-const toolInput = inputData.tool_input || {};
-
-// Session ID: Claude Code uses session_id, Cursor uses conversation_id
+const toolName = rawToolName === 'Shell' ? 'Bash' : rawToolName; // Cursor использует Shell
 currentSessionId = inputData.session_id || inputData.conversation_id || undefined;
-
-// Subagent type: Claude Code uses agent_type, Cursor uses subagent_type
 const agentType = inputData.agent_type || inputData.subagent_type || undefined;
 ```
 
-**Обновить routing в `main()`**:
+**3. Routing по нормализованному событию** (lowercase сравнение):
 ```typescript
-if (normalizedEvent === 'subagentstart') {
-  result = handleSubagentStart(agentType);
-} else if (normalizedEvent === 'subagentstopp') {
-  result = handleSubagentStop();
-} else if (toolName === 'Task') {
-  // ...
-}
+if (normalizedEvent === 'subagentstart') { ... }   // SubagentStart и subagentStart оба работают
+else if (normalizedEvent === 'subagentstop') { ... }
 ```
+
+**4. Интеграция `formatOutput()` в `main()`**:
+- Когда `permissionDecision` присутствует: вызывает `formatOutput()` → Cursor получает `{decision, reason}` + exitCode 2/0; Claude Code получает `hookSpecificOutput` + exitCode 0
+- Когда нет `permissionDecision` (SubagentStop/Start): передаёт result напрямую, exitCode 0
+
+**5. Catch block** использует `formatOutput('ask', ...)` вместо захардкоженного JSON
+
+#### Архитектурные решения
+- Нормализация через `.toLowerCase()` устраняет необходимость дублирования условий для camelCase/PascalCase вариантов
+- `Shell` → `Bash` маппинг обеспечивает прозрачную совместимость без изменения downstream логики
+- `session_id || conversation_id` — fallback цепочка без изменения типа `currentSessionId`
+- Catch block теперь использует единый `formatOutput()` путь, обеспечивая корректный формат для обоих окружений даже при ошибках
 
 **Критерий готовности**: Хук принимает и Claude Code, и Cursor JSON input. Тест с `{ "hook_event_name": "subagentStart", "subagent_type": "tdd-implementer" }` корректно устанавливает guard state.
 
@@ -243,7 +282,7 @@ export function logViolationEvent(event: ViolationEvent): void {
 
 ---
 
-### 2.4 Обновить `tdd-telemetry-hook.ts` для dual-environment
+### [DONE] 2.4 Обновить `tdd-telemetry-hook.ts` для dual-environment
 
 **Цель**: Telemetry hook корректно работает в обеих средах.
 
@@ -275,6 +314,48 @@ export function logViolationEvent(event: ViolationEvent): void {
 5. Читать `duration` из Cursor input (если доступно) для `started_at` расчета
 
 **Критерий готовности**: Записи в `timings.jsonl` содержат `environment`. Хук работает при запуске с Cursor-форматом input.
+
+**Статус**: ✅ Реализовано (RED → GREEN → REFACTOR → CODE_REVIEW → ARCH_REVIEW — все фазы пройдены, 2026-03-04)
+
+**Изменённые файлы**:
+- `.claude/hooks/tdd-telemetry-hook.ts` — GREEN/REFACTOR
+- `tests/unit/hooks/telemetry-hook.test.ts` — RED
+
+#### Что реализовано
+
+1. **Импорт `detectEnvironment`** из `./lib/guard-core` (вместо дублирования)
+2. **`SubagentStopInput`** — добавлены `subagent_type?` и `duration?`; все поля кроме `cwd` и `hook_event_name` опциональны для Cursor-совместимости
+3. **`SubagentTimingEvent.environment`** — обязательное поле `'claude-code' | 'cursor'`
+4. **`logTimingEvent()`** — обогащает event через `event.environment || detectEnvironment()` перед записью
+5. **`main()`**:
+   - `hook_event_name.toLowerCase()` — принимает и `SubagentStop`, и `subagentStop`
+   - `agent_type || subagent_type` — fallback для Cursor
+   - `started_at = new Date(Date.now() - duration).toISOString()` — вычисляется из `duration` (если есть)
+6. **`exitOk()` helper** — извлечён для устранения 5× дублирования
+7. **Удалён** мёртвый экспорт `setProjectRootForTest`
+
+#### Архитектурные решения
+- `detectEnvironment` импортируется из guard-core (единый источник, не дублируется)
+- `started_at` остаётся пустой строкой если `duration` не передан — избегает фантомных временных меток
+- `exitOk()` гарантирует что telemetry никогда не блокирует завершение субагента
+- `environment` — required в интерфейсе, не optional, чтобы гарантировать присутствие в логах
+
+---
+
+## [DONE] Phase 2: Dual-Format Output — ЗАВЕРШЕНА
+
+**Дата завершения**: 2026-03-04
+
+**Итог Phase 2**: Все три hooks-файла теперь работают в dual-environment режиме.
+
+| Subtask | Файл | Результат |
+|---|---|---|
+| 2.1 | `prevent-test-edit.ts` | `formatOutput()` — dual-format output функция |
+| 2.2 | `prevent-test-edit.ts` | Input normalization + `formatOutput()` в `main()` |
+| 2.3 | `lib/guard-core.ts` | `ViolationEvent.environment` + обогащение в `logViolationEvent()` |
+| 2.4 | `tdd-telemetry-hook.ts` | `SubagentTimingEvent.environment` + Cursor input parsing |
+
+**Документация модуля**: `.claude/hooks/CLAUDE.md` создан (2026-03-04)
 
 ---
 

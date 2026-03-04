@@ -24,6 +24,7 @@ export interface ViolationEvent {
   reason: string;
   command_hash?: string;
   command_length?: number;
+  environment?: 'claude-code' | 'cursor';
 }
 
 export const ALLOWED_TEST_WRITERS = ['tdd-test-writer', 'main'];
@@ -114,7 +115,8 @@ export function logViolationEvent(event: ViolationEvent): void {
     const projectRoot = getProjectRoot();
     const logPath = join(projectRoot, 'airefinement/artifacts/traces/violations.jsonl');
     mkdirSync(dirname(logPath), { recursive: true });
-    appendFileSync(logPath, JSON.stringify(event) + '\n');
+    const enrichedEvent = { ...event, environment: event.environment || detectEnvironment() };
+    appendFileSync(logPath, JSON.stringify(enrichedEvent) + '\n');
   } catch {
     // Telemetry must not break guard logic
   }
