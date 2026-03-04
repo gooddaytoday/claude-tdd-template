@@ -11,10 +11,48 @@
  * - Tracks active subagent via state file with session_id and TTL
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { stdout } from 'node:process';
-import { createHash } from 'node:crypto';
+import {
+  GuardState,
+  ViolationEvent,
+  ALLOWED_TEST_WRITERS,
+  getProjectRoot,
+  redactSensitiveSegment,
+  sanitizeCommand,
+  logViolationEvent,
+  writeState,
+  extractSubagentName,
+  normalizePath,
+  isTestFile,
+  isJestConfigFile,
+  isEnforcementFile,
+  contentHasSkipPatterns,
+  bashCommandWritesToTests,
+  bashCommandWritesToJestConfig,
+  bashCommandWritesToEnforcementFiles,
+  detectEnvironment,
+  readState as guardReadState,
+} from './lib/guard-core';
+
+export type { GuardState, ViolationEvent };
+export {
+  detectEnvironment,
+  getProjectRoot,
+  redactSensitiveSegment,
+  sanitizeCommand,
+  logViolationEvent,
+  writeState,
+  extractSubagentName,
+  normalizePath,
+  isTestFile,
+  isJestConfigFile,
+  isEnforcementFile,
+  contentHasSkipPatterns,
+  bashCommandWritesToTests,
+  bashCommandWritesToJestConfig,
+  bashCommandWritesToEnforcementFiles,
+};
 
 interface HookInput {
   hook_event_name: string;
@@ -23,23 +61,6 @@ interface HookInput {
   cwd: string;
   session_id: string;
   agent_type?: string;
-}
-
-interface GuardState {
-  activeSubagent: string;
-  lastUpdated: string;
-  sessionId?: string;
-}
-
-export interface ViolationEvent {
-  timestamp: string;
-  agent: string;
-  attempted_action: string;
-  target_file: string;
-  blocked: boolean;
-  reason: string;
-  command_hash?: string;
-  command_length?: number;
 }
 
 export interface HookOutput {
@@ -54,104 +75,6 @@ export interface HookOutput {
   stopReason?: string;
 }
 
-const ALLOWED_TEST_WRITERS = ['tdd-test-writer', 'main'];
-
-// State file lives inside the project's .claude directory
-const STATE_FILE = '.claude/.guard-state.json';
-
-// State TTL: if older than 2 hours, treat as stale (unknown subagent)
-const STATE_TTL_MS = 2 * 60 * 60 * 1000;
-
-// Match paths that contain tests/ as a directory component
-const PROTECTED_TEST_PATHS = /(?:^|[\\/])tests[\\/]/;
-
-// Match jest config files
-const JEST_CONFIG_PATHS = /(?:^|[\\/])jest(?:\.[^/\\]*)?\.config\.[jt]s$/;
-
-// Match enforcement files that should be protected during TDD cycles
-const ENFORCEMENT_PATHS = /(?:^|[\\/])\.claude[\\/](?:hooks|skills|settings\.json)/;
-
-// Patterns in Bash commands that could write to tests/ (write-capable shell operators/commands).
-// Checks if the command string contains a write operation targeting a tests/ path.
-// Uses simple substring-aware patterns (no ^ anchor inside nested groups).
-const BASH_WRITE_TEST_PATTERNS: RegExp[] = [
-  // Redirect operators (> or >>) writing to a path containing tests/
-  /(?:>>?|tee(?:\s+-a)?)\s+['"]?[^\s'"]*tests[\\/]/,
-  // cp/mv with a destination argument containing tests/
-  /\b(?:cp|mv)\b.*\btests[\\/]/,
-  // sed -i targeting a file in tests/
-  /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\s*(?:''|"")?|--in-place(?:=(?:''|"")?)?\s+).*tests[\\/]/,
-  // echo/printf piped or redirected to tests/
-  /\b(?:echo|printf)\b.*(?:>>?|tee\s)\s*['"]?[^\s'"]*tests[\\/]/,
-  // cat redirected to tests/
-  /\bcat\b.*(?:>>?)\s+['"]?[^\s'"]*tests[\\/]/,
-];
-
-// Patterns for Bash commands writing to jest config files
-const BASH_WRITE_JEST_PATTERNS: RegExp[] = [
-  /(?:>>?|tee(?:\s+-a)?)\s+['"]?[^\s'"]*jest(?:\.[^/\\'"\s]*)?\.config\.[jt]s/,
-  /\b(?:cp|mv)\b.*jest(?:\.[^/\\'"\s]*)?\.config\.[jt]s/,
-  /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\s*(?:''|"")?|--in-place(?:=(?:''|"")?)?\s+).*jest(?:\.[^/\\'"\s]*)?\.config\.[jt]s/,
-];
-
-// Patterns for Bash commands writing to TDD enforcement files
-const BASH_WRITE_ENFORCEMENT_PATTERNS: RegExp[] = [
-  /(?:>>?|tee(?:\s+-a)?)\s+['"]?[^\s'"]*\.claude[\\/](?:hooks|skills)[\\/]/,
-  /(?:>>?|tee(?:\s+-a)?)\s+['"]?[^\s'"]*\.claude[\\/]settings\.json/,
-  /\b(?:cp|mv)\b.*\.claude[\\/](?:hooks|skills)[\\/]/,
-  /\b(?:cp|mv)\b.*\.claude[\\/]settings\.json/,
-  /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\s*(?:''|"")?|--in-place(?:=(?:''|"")?)?\s+).*\.claude[\\/](?:hooks|skills)[\\/]/,
-  /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\s*(?:''|"")?|--in-place(?:=(?:''|"")?)?\s+).*\.claude[\\/]settings\.json/,
-];
-
-// Semantic test-disabling patterns to detect inside test file content
-const SKIP_PATTERNS = /\b(?:describe|it|test)\.(?:skip|only)\b|\bx(?:describe|it|test)\b|\bif\s*\(\s*false\s*\)/;
-
-export function getProjectRoot(): string {
-  let cwd = process.cwd();
-  for (let i = 0; i < 10; i++) {
-    if (existsSync(join(cwd, '.claude'))) {
-      return cwd;
-    }
-    const parent = join(cwd, '..');
-    if (parent === cwd) break;
-    cwd = parent;
-  }
-  return process.cwd();
-}
-
-export function redactSensitiveSegment(value: string): string {
-  let sanitized = value;
-
-  // key=value style secrets
-  sanitized = sanitized.replace(
-    /\b([A-Za-z_][A-Za-z0-9_]*(?:token|secret|password|passwd|key))=([^\s]+)/gi,
-    '$1=<REDACTED>'
-  );
-  // CLI flags like --token=... or --password ...
-  sanitized = sanitized.replace(
-    /\b(--?(?:token|secret|password|passwd|key))(?:=|\s+)([^\s]+)/gi,
-    '$1=<REDACTED>'
-  );
-  // Authorization header style
-  sanitized = sanitized.replace(/\b(Bearer)\s+([^\s]+)/gi, '$1 <REDACTED>');
-
-  return sanitized;
-}
-
-export function sanitizeCommand(command: string): Pick<ViolationEvent, 'target_file' | 'command_hash' | 'command_length'> {
-  const normalized = command.replace(/\s+/g, ' ').trim();
-  const prefix = redactSensitiveSegment(normalized.slice(0, 20));
-  const suffix = redactSensitiveSegment(normalized.slice(-20));
-  const commandHash = createHash('sha256').update(command).digest('hex');
-
-  return {
-    target_file: `cmd_sha256:${commandHash};len:${command.length};prefix:${prefix};suffix:${suffix}`,
-    command_hash: commandHash,
-    command_length: command.length,
-  };
-}
-
 // Current session ID, set from hook input in main()
 let currentSessionId: string | undefined;
 
@@ -159,102 +82,8 @@ export function setCurrentSessionId(id: string | undefined): void {
   currentSessionId = id;
 }
 
-export function logViolationEvent(event: ViolationEvent): void {
-  try {
-    const projectRoot = getProjectRoot();
-    const logPath = join(projectRoot, 'airefinement/artifacts/traces/violations.jsonl');
-    mkdirSync(dirname(logPath), { recursive: true });
-    appendFileSync(logPath, JSON.stringify(event) + '\n');
-  } catch {
-    // Telemetry must not break guard logic
-  }
-}
-
 export function readState(): GuardState {
-  const projectRoot = getProjectRoot();
-  const statePath = join(projectRoot, STATE_FILE);
-  try {
-    if (existsSync(statePath)) {
-      const content = readFileSync(statePath, 'utf-8');
-      const state = JSON.parse(content) as GuardState;
-
-      // Check TTL: stale, missing, or unparsable timestamps are treated as unknown (fail-closed)
-      const parsedTime = new Date(state.lastUpdated).getTime();
-      const age = Date.now() - parsedTime;
-      if (Number.isNaN(age) || age < 0 || age > STATE_TTL_MS) {
-        return { activeSubagent: 'unknown', lastUpdated: new Date().toISOString() };
-      }
-
-      // Session isolation: if state belongs to a different session, treat as 'main' (safe default)
-      if (currentSessionId && state.sessionId && state.sessionId !== currentSessionId) {
-        return { activeSubagent: 'main', lastUpdated: state.lastUpdated, sessionId: state.sessionId };
-      }
-
-      return state;
-    }
-  } catch {
-    // Fall through to fail-closed default
-  }
-  // A2: fail-closed — unknown state blocks test modifications
-  return { activeSubagent: 'unknown', lastUpdated: new Date().toISOString() };
-}
-
-export function writeState(state: GuardState): void {
-  const projectRoot = getProjectRoot();
-  const statePath = join(projectRoot, STATE_FILE);
-  try {
-    writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf-8');
-  } catch {
-    // Silent fail - state tracking is best-effort on write
-  }
-}
-
-export function extractSubagentName(toolInput: Record<string, unknown>): string | null {
-  const name = toolInput.subagent_type as string | undefined;
-  return name || null;
-}
-
-export function normalizePath(filePath: string): string {
-  const normalized = filePath.replace(/\\/g, '/');
-  const cleaned = normalized.replace(/^(?:\.+\/)+/, '');
-  return cleaned.replace(/^\/+/, '');
-}
-
-export function isTestFile(filePath: string): boolean {
-  if (!filePath) return false;
-  const normalized = filePath.replace(/\\/g, '/');
-  const withoutLeadingSlash = normalizePath(filePath);
-  return PROTECTED_TEST_PATHS.test(withoutLeadingSlash) || PROTECTED_TEST_PATHS.test(normalized);
-}
-
-export function isJestConfigFile(filePath: string): boolean {
-  if (!filePath) return false;
-  const normalized = filePath.replace(/\\/g, '/');
-  const withoutLeadingSlash = normalizePath(filePath);
-  return JEST_CONFIG_PATHS.test(withoutLeadingSlash) || JEST_CONFIG_PATHS.test(normalized);
-}
-
-export function isEnforcementFile(filePath: string): boolean {
-  if (!filePath) return false;
-  const normalized = filePath.replace(/\\/g, '/');
-  const withoutLeadingSlash = normalizePath(filePath);
-  return ENFORCEMENT_PATHS.test(withoutLeadingSlash) || ENFORCEMENT_PATHS.test(normalized);
-}
-
-export function contentHasSkipPatterns(content: string): boolean {
-  return SKIP_PATTERNS.test(content);
-}
-
-export function bashCommandWritesToTests(command: string): boolean {
-  return BASH_WRITE_TEST_PATTERNS.some(pattern => pattern.test(command));
-}
-
-export function bashCommandWritesToJestConfig(command: string): boolean {
-  return BASH_WRITE_JEST_PATTERNS.some(pattern => pattern.test(command));
-}
-
-export function bashCommandWritesToEnforcementFiles(command: string): boolean {
-  return BASH_WRITE_ENFORCEMENT_PATTERNS.some(pattern => pattern.test(command));
+  return guardReadState(currentSessionId);
 }
 
 // A1: Handle Bash tool — detect write-capable commands targeting tests/ or jest configs
@@ -391,7 +220,6 @@ export function handleFileEdit(toolName: string, toolInput: Record<string, unkno
     }
 
     // A3: Detect semantic test-disabling patterns in content being written.
-    // Covers Write (new_content/content), Edit (new_string), and MultiEdit (edits[].new_string).
     const newContent = [
       toolInput.new_content,
       toolInput.content,
@@ -474,16 +302,8 @@ export function handleSubagentStop(): HookOutput {
 }
 
 export function handleSubagentStart(agentType?: string): HookOutput {
-  if (!agentType) {
-    writeState({
-      activeSubagent: 'unknown',
-      lastUpdated: new Date().toISOString(),
-      sessionId: currentSessionId,
-    });
-    return {};
-  }
   writeState({
-    activeSubagent: agentType,
+    activeSubagent: agentType ?? 'unknown',
     lastUpdated: new Date().toISOString(),
     sessionId: currentSessionId,
   });
@@ -508,7 +328,6 @@ export function main(): void {
     } else if (toolName === 'Task') {
       result = handleTaskToolUse(toolInput);
     } else if (toolName === 'Bash') {
-      // A1: Intercept Bash commands that could write to tests/
       result = handleBashCommand(toolInput);
     } else if (toolName === 'Write' || toolName === 'Edit' || toolName === 'MultiEdit') {
       result = handleFileEdit(toolName, toolInput);
@@ -524,7 +343,6 @@ export function main(): void {
     stdout.write(JSON.stringify(result));
     process.exit(0);
   } catch {
-    // On unexpected failure, ask user rather than blindly allowing
     const fallback = {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',

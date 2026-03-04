@@ -6,7 +6,7 @@
 
 ---
 
-## Phase 1: Выделение guard-core.ts
+## [DONE] Phase 1: Выделение guard-core.ts
 
 ### 1.1 Создать файл `.claude/hooks/lib/guard-core.ts`
 
