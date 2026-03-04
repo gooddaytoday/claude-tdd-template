@@ -359,9 +359,9 @@ export function logViolationEvent(event: ViolationEvent): void {
 
 ---
 
-## Phase 3: Cursor Hooks Configuration
+## [DONE] Phase 3: Cursor Hooks Configuration
 
-### 3.1 Создать `.cursor/hooks.json`
+### [DONE] 3.1 Создать `.cursor/hooks.json`
 
 **Цель**: Нативные Cursor hooks для покрытия зазоров third-party compatibility.
 
@@ -394,7 +394,7 @@ export function logViolationEvent(event: ViolationEvent): void {
 
 ---
 
-### 3.2 Создать `.claude/hooks/cursor-session-init.ts`
+### [DONE] 3.2 Создать `.claude/hooks/cursor-session-init.ts`
 
 **Цель**: Инъекция TDD контекста в начало Cursor сессий + сброс guard state.
 
@@ -447,6 +447,22 @@ main();
 ```
 
 **Критерий готовности**: При запуске `echo '{"session_id":"test","hook_event_name":"sessionStart","conversation_id":"c1","is_background_agent":false}' | npx tsx .claude/hooks/cursor-session-init.ts` возвращает JSON с `additional_context`. Guard state сброшен в `main`.
+
+**Статус**: DONE (2026-03-04)
+
+**Реализация**:
+
+Изменённые/созданные файлы:
+- `.claude/hooks/cursor-session-init.ts` — новый хук (GREEN/REFACTOR)
+- `tests/unit/hooks/cursor-session-init.test.ts` — unit тесты (RED)
+- `tests/integration/hooks/hook-stdio.test.ts` — integration тесты добавлены в конец (RED)
+
+Что добавлено в `cursor-session-init.ts`:
+- `export interface SessionStartInput` — Cursor sessionStart input schema
+- `export function buildSessionResponse(input)` — чистая функция для unit-тестирования; возвращает `{ response: { additional_context, env }, state: { activeSubagent: 'main', lastUpdated, sessionId } }`
+- `main()` — stdin parse, вызов `buildSessionResponse`, `writeState()`, stdout write; catch → `{}` и exit 0
+
+Тест-покрытие: 6 unit тестов + 4 integration теста, все зелёные.
 
 ---
 

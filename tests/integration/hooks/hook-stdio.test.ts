@@ -730,3 +730,86 @@ describe('prevent-test-edit.ts — Cursor dual-format input parsing', () => {
     expect(parsed.reason).toBeDefined();
   });
 });
+
+// ============================================================================
+// cursor-session-init.ts stdio -- 4 test cases
+// ============================================================================
+describe('cursor-session-init.ts stdio', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = setupTempProject();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns valid JSON with additional_context containing TDD for sessionStart input', () => {
+    const result = runHook('.claude/hooks/cursor-session-init.ts', {
+      cwd: tmpDir,
+      input: {
+        hook_event_name: 'sessionStart',
+        session_id: 'test-session-001',
+        conversation_id: 'conv-001',
+        is_background_agent: false,
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(typeof parsed.additional_context).toBe('string');
+    expect(parsed.additional_context).toContain('TDD');
+  });
+
+  it('writes .guard-state.json with activeSubagent main and sessionId after sessionStart', () => {
+    const result = runHook('.claude/hooks/cursor-session-init.ts', {
+      cwd: tmpDir,
+      input: {
+        hook_event_name: 'sessionStart',
+        session_id: 'test-session-001',
+        conversation_id: 'conv-001',
+        is_background_agent: false,
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+
+    const guardStatePath = path.join(tmpDir, '.claude/.guard-state.json');
+    expect(fs.existsSync(guardStatePath)).toBe(true);
+
+    const state = JSON.parse(fs.readFileSync(guardStatePath, 'utf-8'));
+    expect(state.activeSubagent).toBe('main');
+    expect(state.sessionId).toBe('test-session-001');
+  });
+
+  it('returns {} and exits with code 0 on corrupt stdin', () => {
+    const result = runHook('.claude/hooks/cursor-session-init.ts', {
+      cwd: tmpDir,
+      rawInput: '{"bad json',
+    });
+
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed).toEqual({});
+  });
+
+  it('always exits with code 0 for both valid and invalid input', () => {
+    const validResult = runHook('.claude/hooks/cursor-session-init.ts', {
+      cwd: tmpDir,
+      input: {
+        hook_event_name: 'sessionStart',
+        session_id: 'test-session-002',
+        conversation_id: 'conv-002',
+        is_background_agent: false,
+      },
+    });
+    expect(validResult.exitCode).toBe(0);
+
+    const invalidResult = runHook('.claude/hooks/cursor-session-init.ts', {
+      cwd: tmpDir,
+      rawInput: 'not valid json at all!!!',
+    });
+    expect(invalidResult.exitCode).toBe(0);
+  });
+});

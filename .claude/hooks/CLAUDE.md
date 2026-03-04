@@ -4,12 +4,13 @@ TDD Guard & Telemetry hooks. Run by Claude Code (via `.claude/settings.json`) an
 
 ## Overview
 
-Three files, one library:
+Four files, one library:
 
 | File | Role | Hook events |
 |---|---|---|
 | `prevent-test-edit.ts` | Guard: blocks unauthorized test modifications | `PreToolUse`, `SubagentStart`, `SubagentStop` |
 | `tdd-telemetry-hook.ts` | Telemetry: records TDD phase timing | `SubagentStop` |
+| `cursor-session-init.ts` | Session init: resets guard state + injects TDD context | `sessionStart` (Cursor only) |
 | `lib/guard-core.ts` | Shared library: state, types, pure functions | — (no entry point) |
 
 ## Dual-Environment Architecture
@@ -154,6 +155,23 @@ State file: `.claude/.guard-state.json` (git-ignored, runtime only).
 - Session-scoped: different `sessionId` → treated as `main` (parallel sessions don't interfere)
 - `unknown` state → denies test writes (same as non-allowed subagent)
 
+## cursor-session-init.ts
+
+Cursor-only session init hook. Only runs from `.cursor/hooks.json` (not in Claude Code `.claude/settings.json`).
+
+**Flow:**
+1. Parse `SessionStartInput` from stdin
+2. `buildSessionResponse(input)` — pure function returns `{ response, state }`
+3. `writeState(state)` — write guard state with `activeSubagent: 'main'`
+4. Write `response` JSON to stdout: `{ additional_context: string, env: {} }`
+5. `process.exit(0)` always (including catch block)
+
+**Key exports:**
+- `SessionStartInput` — interface for Cursor sessionStart input
+- `buildSessionResponse(input)` — pure function, testable in isolation
+
+**Why Cursor-only:** Claude Code does not fire a matching `SessionStart` event in the same way. The guard state reset on session start prevents stale state from a previous session bleeding into a new Cursor conversation.
+
 ## Files Structure
 
 ```
@@ -161,6 +179,7 @@ State file: `.claude/.guard-state.json` (git-ignored, runtime only).
 ├── CLAUDE.md                  ← this file
 ├── prevent-test-edit.ts       ← TDD Guard hook entrypoint
 ├── tdd-telemetry-hook.ts      ← Telemetry hook entrypoint
+├── cursor-session-init.ts     ← Cursor sessionStart hook (Cursor only)
 └── lib/
     └── guard-core.ts          ← Shared library (no entrypoint)
 ```
@@ -187,3 +206,14 @@ State file: `.claude/.guard-state.json` (git-ignored, runtime only).
 - `started_at` computed from `duration` field (Cursor provides it)
 - Extracted `exitOk()` helper (removed 5× duplication)
 - Removed dead `setProjectRootForTest` export
+
+### Phase 3: Cursor Hooks Configuration (2026-03-04)
+
+**cursor-session-init.ts:** (new file)
+- Cursor `sessionStart` hook: resets guard state + injects TDD context into session
+- Exports `SessionStartInput`, `buildSessionResponse()` pure function
+- Used exclusively from `.cursor/hooks.json`
+
+**.cursor/hooks.json:** (new file)
+- `subagentStart` → `prevent-test-edit.ts` (fills gap: not mapped by third-party compat)
+- `sessionStart` → `cursor-session-init.ts` (new: Cursor-only session init)
