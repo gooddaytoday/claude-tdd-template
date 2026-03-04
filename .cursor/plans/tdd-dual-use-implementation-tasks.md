@@ -571,7 +571,7 @@ Do NOT trust Phase Packet status without running the test command yourself.
 
 ---
 
-## Phase 5: Infrastructure
+## [DONE] Phase 5: Infrastructure
 
 ### 5.1 Создать `.cursor/mcp.json`
 
