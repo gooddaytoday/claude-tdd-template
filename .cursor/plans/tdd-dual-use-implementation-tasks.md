@@ -660,7 +660,7 @@ See `.claude/TASKMASTER_WORKFLOW.md` for the recommended task lifecycle.
 
 ---
 
-## Phase 6: airefinement Compatibility
+## [DONE] Phase 6: airefinement Compatibility
 
 ### 6.1 Верификация единых путей артефактов
 

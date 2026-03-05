@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+export const EnvironmentSchema = z.enum(['claude-code', 'cursor']);
+
+export type Environment = z.infer<typeof EnvironmentSchema>;
+
 export const PhaseSchema = z.enum(['RED', 'GREEN', 'REFACTOR', 'CODE_REVIEW', 'ARCH_REVIEW', 'DOCS']);
 
 export const PhaseRecordSchema = z.object({
@@ -35,6 +39,7 @@ export const GuardViolationEventSchema = z.object({
   reason: z.string(),
   command_hash: z.string().optional(),
   command_length: z.number().optional(),
+  environment: EnvironmentSchema.optional(),
 });
 
 export type GuardViolationEvent = z.infer<typeof GuardViolationEventSchema>;
@@ -63,6 +68,7 @@ export const SubagentTimingEventSchema = z.object({
   started_at: z.string(),
   finished_at: z.string(),
   tool_calls_count: z.number(),
+  environment: EnvironmentSchema.optional(),
 });
 
 export type SubagentTimingEvent = z.infer<typeof SubagentTimingEventSchema>;
