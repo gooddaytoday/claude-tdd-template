@@ -746,14 +746,14 @@ See `AGENTS.md` for cross-platform setup instructions.
 
 **Сценарии**:
 
-1. **Third-party hooks загружены**: проверить в Cursor Settings > Hooks tab что hooks из `.claude/settings.json` видны.
-2. **preToolUse deny**: попросить агента записать файл в `tests/` при active subagent != test-writer → ожидание: блокировка.
-3. **subagentStart state update**: вызвать Task tool с tdd-implementer → проверить `.claude/.guard-state.json` обновлен.
+1. [OK] **Third-party hooks загружены**: проверить в Cursor Settings > Hooks tab что hooks из `.claude/settings.json` видны.
+2. [KNOWN LIMITATION] **preToolUse deny**: Cursor **не вызывает** `preToolUse` и `afterFileEdit` для tool-вызовов внутри субагентов. Только `subagentStart`/`subagentStop` срабатывают. Guard enforcement внутри субагентов в Cursor опирается на prompt-level правила (`.cursor/rules/tdd-guard.mdc`). В Claude Code CLI `PreToolUse` работает для всех вызовов включая субагентские. Когда Cursor добавит поддержку `preToolUse` для субагентов — можно будет включить техническую блокировку.
+3. [OK] **subagentStart state update**: вызвать Task tool с tdd-implementer → `.claude/.guard-state.json` обновляется корректно (проверено).
 4. **sessionStart context**: начать новую сессию → проверить что TDD контекст инъектирован в начало.
-5. **Violation logging**: проверить `violations.jsonl` с `environment: "cursor"`.
+5. [OK] **Violation logging**: `violations.jsonl` содержит записи с `environment: "cursor"` (проверено).
 6. **Rules visible**: проверить что `tdd-guard.mdc` и `tdd-workflow.mdc` видны в Cursor Settings > Rules.
 
-**Критерий готовности**: Все 6 сценариев проходят. Guard enforcement работает в Cursor.
+**Критерий готовности**: Сценарии 1, 3, 5 пройдены. Сценарий 2 — known limitation с workaround (prompt rules). Сценарии 4, 6 — ожидают проверки.
 
 ---
 

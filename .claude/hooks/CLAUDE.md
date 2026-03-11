@@ -172,6 +172,25 @@ Cursor-only session init hook. Only runs from `.cursor/hooks.json` (not in Claud
 
 **Why Cursor-only:** Claude Code does not fire a matching `SessionStart` event in the same way. The guard state reset on session start prevents stale state from a previous session bleeding into a new Cursor conversation.
 
+## Known Limitations — Cursor Subagent Hooks
+
+**Cursor does not fire `preToolUse` or `afterFileEdit` for tool calls made inside subagents (Task tool).** Only `subagentStart` and `subagentStop` fire for subagent lifecycle events.
+
+| Hook | Main agent | Subagent |
+|---|---|---|
+| `preToolUse` | Fires | **Does not fire** |
+| `afterFileEdit` | Fires | **Does not fire** |
+| `subagentStart` | — | Fires |
+| `subagentStop` | — | Fires |
+| `sessionStart` | Fires | — |
+
+**Consequence:** In Cursor, TDD Guard enforcement for subagent tool calls relies on prompt-level rules (`.cursor/rules/tdd-guard.mdc`) rather than technical hooks. The hooks still provide:
+- State tracking (`subagentStart`/`subagentStop`)
+- Protection for direct (non-subagent) edits (`afterFileEdit`, third-party `PreToolUse`)
+- Violation logging and telemetry
+
+**In Claude Code CLI**, `PreToolUse` fires for all tool calls (including subagent), so full technical enforcement is available.
+
 ## Files Structure
 
 ```
