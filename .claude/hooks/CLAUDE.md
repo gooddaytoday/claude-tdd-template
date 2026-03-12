@@ -37,7 +37,7 @@ export function detectEnvironment(): 'claude-code' | 'cursor' {
 | Claude Code | `{ hookSpecificOutput: { hookEventName, permissionDecision, permissionDecisionReason? } }` | Always `0` |
 | Cursor | `{ decision: 'allow'\|'deny', reason: string }` | `2` for deny, `0` otherwise |
 
-Note: `'ask'` is normalized to `'deny'` in Cursor output (Cursor does not support `ask`).
+Note: `'ask'` is normalized to `'deny'` in Cursor output (Cursor does not support `ask`). Both `'ask'` and `'deny'` produce `exitCode: 2` in Cursor to ensure the block signal is authoritative.
 
 ## lib/guard-core.ts
 

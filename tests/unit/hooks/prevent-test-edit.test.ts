@@ -740,10 +740,10 @@ describe('formatOutput dual-environment output', () => {
       expect(parsed.decision).toBe('allow');
     });
 
-    it('formatOutput(ask, reason) returns exitCode 0 and JSON with decision: deny (ask mapped to deny in Cursor)', () => {
+    it('formatOutput(ask, reason) returns exitCode 2 and JSON with decision: deny (ask mapped to deny in Cursor)', () => {
       const result = formatOutput('ask', 'needs confirmation');
 
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(2);
       const parsed = JSON.parse(result.json) as { decision?: string };
       expect(parsed.decision).toBe('deny');
     });

@@ -326,7 +326,7 @@ export function formatOutput(decision: PermissionDecision, reason?: string): For
     const cursorDecision = decision === 'ask' ? 'deny' : decision;
     return {
       json: JSON.stringify({ decision: cursorDecision, reason: reason || '' }),
-      exitCode: decision === 'deny' ? 2 : 0,
+      exitCode: cursorDecision === 'deny' ? 2 : 0,
     };
   }
 

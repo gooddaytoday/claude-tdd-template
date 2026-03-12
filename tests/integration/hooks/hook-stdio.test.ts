@@ -729,6 +729,37 @@ describe('prevent-test-edit.ts — Cursor dual-format input parsing', () => {
     expect(parsed.decision).toBe('deny');
     expect(parsed.reason).toBeDefined();
   });
+
+  it('exits with code 2 in Cursor environment when decision is ask (ask mapped to deny)', () => {
+    // Pre-set state to tdd-implementer — jest.config edit triggers 'ask' in handleBashCommand
+    fs.writeFileSync(
+      path.join(tmpDir, '.claude/.guard-state.json'),
+      JSON.stringify({
+        activeSubagent: 'tdd-implementer',
+        lastUpdated: new Date().toISOString(),
+        sessionId: 'test-002',
+      })
+    );
+
+    // Use a Bash command that writes to jest.config — guard returns 'ask' for jest config edits
+    const result = runHookWithEnv('.claude/hooks/prevent-test-edit.ts', {
+      cwd: tmpDir,
+      env: { CURSOR_VERSION: '1.0' },
+      input: {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Bash',
+        tool_input: { command: 'echo "x" > jest.config.ts' },
+        session_id: 'test-002',
+        cwd: tmpDir,
+      },
+    });
+
+    // Cursor maps 'ask' -> 'deny' and exit code 2 (not 0), so the action is blocked
+    expect(result.exitCode).toBe(2);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.decision).toBe('deny');
+    expect(parsed.reason).toBeDefined();
+  });
 });
 
 // ============================================================================
