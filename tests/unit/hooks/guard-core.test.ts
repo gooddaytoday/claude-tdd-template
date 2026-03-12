@@ -101,12 +101,12 @@ describe('readState with explicit sessionId parameter', () => {
     expect(result.sessionId).toBe('session-abc');
   });
 
-  it('returns main-agent state when sessionId differs from state sessionId', () => {
+  it('returns fail-closed unknown state when sessionId differs from legacy state sessionId', () => {
     const state = makeState({ sessionId: 'session-abc' });
     writeState(state);
 
     const result = readState('session-xyz');
-    expect(result.activeSubagent).toBe('main');
+    expect(result.activeSubagent).toBe('unknown');
   });
 
   it('returns state as-is when called with sessionId = undefined (no session filtering)', () => {
@@ -126,6 +126,52 @@ describe('readState with explicit sessionId parameter', () => {
 
     const result = readState('some-session');
     expect(result.activeSubagent).toBe('tdd-refactorer');
+  });
+});
+
+// ============================================================================
+// readState session-scoped storage format
+// ============================================================================
+describe('readState session-scoped storage format', () => {
+  function writeRawStateFile(value: unknown): void {
+    fs.writeFileSync(path.join(tmpDir, '.claude/.guard-state.json'), JSON.stringify(value, null, 2), 'utf-8');
+  }
+
+  it('uses the stable fallback bucket when sessionId is undefined', () => {
+    const now = new Date().toISOString();
+    writeRawStateFile({
+      __default__: {
+        activeSubagent: 'tdd-test-writer',
+        lastUpdated: now,
+      },
+      'session-abc': {
+        activeSubagent: 'tdd-implementer',
+        lastUpdated: now,
+        sessionId: 'session-abc',
+      },
+    });
+
+    const result = readState(undefined);
+    expect(result.activeSubagent).toBe('tdd-test-writer');
+  });
+
+  it('isolates multiple sessions stored in the same state file', () => {
+    const now = new Date().toISOString();
+    writeRawStateFile({
+      'session-abc': {
+        activeSubagent: 'tdd-implementer',
+        lastUpdated: now,
+        sessionId: 'session-abc',
+      },
+      'session-xyz': {
+        activeSubagent: 'tdd-refactorer',
+        lastUpdated: now,
+        sessionId: 'session-xyz',
+      },
+    });
+
+    expect(readState('session-abc').activeSubagent).toBe('tdd-implementer');
+    expect(readState('session-xyz').activeSubagent).toBe('tdd-refactorer');
   });
 });
 

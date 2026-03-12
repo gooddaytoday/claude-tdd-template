@@ -145,14 +145,22 @@ State file: `.claude/.guard-state.json` (git-ignored, runtime only).
 
 ```json
 {
-  "activeSubagent": "tdd-implementer",
-  "lastUpdated": "2026-03-04T10:00:00.000Z",
-  "sessionId": "abc123"
+  "abc123": {
+    "activeSubagent": "tdd-implementer",
+    "lastUpdated": "2026-03-04T10:00:00.000Z",
+    "sessionId": "abc123"
+  },
+  "__default__": {
+    "activeSubagent": "main",
+    "lastUpdated": "2026-03-04T10:00:00.000Z"
+  }
 }
 ```
 
 - TTL: 2 hours. Expired state → treated as `unknown` → fail-closed (denies test writes)
-- Session-scoped: different `sessionId` → treated as `main` (parallel sessions don't interfere)
+- Session-scoped: `readState(sessionId)` reads only that session's bucket; missing bucket → `unknown` → fail-closed
+- Legacy compatibility: `__default__` is only used as a fallback when it is the sole sessionless bucket
+- Writes are session-keyed and serialized with a short-lived lock + atomic rename to reduce lost updates
 - `unknown` state → denies test writes (same as non-allowed subagent)
 
 ## cursor-session-init.ts

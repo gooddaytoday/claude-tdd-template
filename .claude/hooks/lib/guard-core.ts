@@ -5,7 +5,7 @@
  * and any consumer that needs guard state or path-classification without the
  * full hook runtime (e.g. tests, other hooks, scripts).
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, rmSync, renameSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 
@@ -14,6 +14,8 @@ export interface GuardState {
   lastUpdated: string;
   sessionId?: string;
 }
+
+type GuardStateFile = GuardState | Record<string, GuardState>;
 
 export interface ViolationEvent {
   timestamp: string;
@@ -63,6 +65,9 @@ export const BASH_WRITE_ENFORCEMENT_PATTERNS: RegExp[] = [
 ];
 
 export const SKIP_PATTERNS = /\b(?:describe|it|test)\.(?:skip|only)\b|\bx(?:describe|it|test)\b|\bif\s*\(\s*false\s*\)/;
+
+const STATE_LOCK_SUFFIX = '.lock';
+const STATE_LOCK_STALE_MS = 1000;
 
 export function detectEnvironment(): 'claude-code' | 'cursor' {
   return process.env.CURSOR_VERSION ? 'cursor' : 'claude-code';
@@ -122,22 +127,166 @@ export function logViolationEvent(event: ViolationEvent): void {
   }
 }
 
+function unknownState(): GuardState {
+  return { activeSubagent: 'unknown', lastUpdated: new Date().toISOString() };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isGuardState(value: unknown): value is GuardState {
+  return (
+    isRecord(value) &&
+    typeof value.activeSubagent === 'string' &&
+    typeof value.lastUpdated === 'string' &&
+    (value.sessionId === undefined || typeof value.sessionId === 'string')
+  );
+}
+
+function isExpiredState(state: GuardState): boolean {
+  const parsedTime = new Date(state.lastUpdated).getTime();
+  const age = Date.now() - parsedTime;
+  return Number.isNaN(age) || age < 0 || age > STATE_TTL_MS;
+}
+
+function parseStateFile(content: string): GuardStateFile | null {
+  const parsed = JSON.parse(content) as unknown;
+  if (isGuardState(parsed)) {
+    return parsed;
+  }
+
+  if (!isRecord(parsed)) {
+    return null;
+  }
+
+  const entries = Object.entries(parsed);
+  if (entries.length === 0) {
+    return {};
+  }
+
+  const stateMap: Record<string, GuardState> = {};
+  for (const [key, value] of entries) {
+    if (!isGuardState(value)) {
+      return null;
+    }
+    stateMap[key] = value;
+  }
+
+  return stateMap;
+}
+
+function selectSessionState(stateFile: GuardStateFile, sessionId?: string): GuardState | null {
+  if (isGuardState(stateFile)) {
+    if (sessionId && stateFile.sessionId && stateFile.sessionId !== sessionId) {
+      return null;
+    }
+    return stateFile;
+  }
+
+  if (sessionId) {
+    if (stateFile[sessionId]) {
+      return stateFile[sessionId];
+    }
+
+    const defaultState = stateFile.__default__;
+    if (defaultState && defaultState.sessionId === undefined && Object.keys(stateFile).length === 1) {
+      return defaultState;
+    }
+
+    return null;
+  }
+
+  if (stateFile.__default__) {
+    return stateFile.__default__;
+  }
+
+  const entries = Object.values(stateFile);
+  if (entries.length === 1) {
+    return entries[0];
+  }
+
+  return null;
+}
+
+function pruneExpiredStateEntries(stateFile: GuardStateFile): Record<string, GuardState> {
+  if (!isGuardState(stateFile)) {
+    return Object.fromEntries(
+      Object.entries(stateFile).filter(([, value]) => !isExpiredState(value))
+    );
+  }
+
+  if (isExpiredState(stateFile)) {
+    return {};
+  }
+
+  const bucketKey = stateFile.sessionId ?? '__default__';
+  return { [bucketKey]: stateFile };
+}
+
+function waitForLockRetry(delayMs: number): void {
+  const end = Date.now() + delayMs;
+  while (Date.now() < end) {
+    // Busy wait for a very short interval to serialize sync hook writes.
+  }
+}
+
+function clearStaleStateLock(lockPath: string): void {
+  try {
+    const age = Date.now() - statSync(lockPath).mtimeMs;
+    if (!Number.isNaN(age) && age > STATE_LOCK_STALE_MS) {
+      rmSync(lockPath, { recursive: true, force: true });
+    }
+  } catch {
+    // Best-effort cleanup only.
+  }
+}
+
+function withStateFileLock<T>(statePath: string, action: () => T): T {
+  const lockPath = `${statePath}${STATE_LOCK_SUFFIX}`;
+  const deadline = Date.now() + 250;
+
+  while (true) {
+    try {
+      mkdirSync(lockPath);
+      break;
+    } catch (error) {
+      clearStaleStateLock(lockPath);
+
+      if (
+        !(error instanceof Error) ||
+        !('code' in error) ||
+        error.code !== 'EEXIST' ||
+        Date.now() >= deadline
+      ) {
+        throw error;
+      }
+
+      waitForLockRetry(10);
+    }
+  }
+
+  try {
+    return action();
+  } finally {
+    rmSync(lockPath, { recursive: true, force: true });
+  }
+}
+
 export function readState(sessionId?: string): GuardState {
   const projectRoot = getProjectRoot();
   const statePath = join(projectRoot, STATE_FILE);
   try {
     if (existsSync(statePath)) {
       const content = readFileSync(statePath, 'utf-8');
-      const state = JSON.parse(content) as GuardState;
-
-      const parsedTime = new Date(state.lastUpdated).getTime();
-      const age = Date.now() - parsedTime;
-      if (Number.isNaN(age) || age < 0 || age > STATE_TTL_MS) {
-        return { activeSubagent: 'unknown', lastUpdated: new Date().toISOString() };
+      const stateFile = parseStateFile(content);
+      if (!stateFile) {
+        return unknownState();
       }
 
-      if (sessionId && state.sessionId && state.sessionId !== sessionId) {
-        return { activeSubagent: 'main', lastUpdated: state.lastUpdated, sessionId: state.sessionId };
+      const state = selectSessionState(stateFile, sessionId);
+      if (!state || isExpiredState(state)) {
+        return unknownState();
       }
 
       return state;
@@ -145,14 +294,29 @@ export function readState(sessionId?: string): GuardState {
   } catch {
     // Fall through to fail-closed default
   }
-  return { activeSubagent: 'unknown', lastUpdated: new Date().toISOString() };
+  return unknownState();
 }
 
 export function writeState(state: GuardState): void {
   const projectRoot = getProjectRoot();
   const statePath = join(projectRoot, STATE_FILE);
   try {
-    writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf-8');
+    withStateFileLock(statePath, () => {
+      let stateMap: Record<string, GuardState> = {};
+
+      if (existsSync(statePath)) {
+        const existing = parseStateFile(readFileSync(statePath, 'utf-8'));
+        if (existing) {
+          stateMap = pruneExpiredStateEntries(existing);
+        }
+      }
+
+      const bucketKey = state.sessionId ?? '__default__';
+      stateMap[bucketKey] = state;
+      const tempPath = `${statePath}.${process.pid}.tmp`;
+      writeFileSync(tempPath, JSON.stringify(stateMap, null, 2), 'utf-8');
+      renameSync(tempPath, statePath);
+    });
   } catch {
     // Silent fail - state tracking is best-effort on write
   }

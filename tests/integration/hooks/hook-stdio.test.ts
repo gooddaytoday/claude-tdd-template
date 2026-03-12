@@ -101,7 +101,7 @@ function runHook(
     stderr: result.stderr || '',
     exitCode: result.status ?? (result.error ? 1 : 0),
     signal: result.signal ?? null,
-    timedOut: result.error?.code === 'ETIMEDOUT',
+    timedOut: (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT',
     error: result.error,
   };
 }
@@ -122,6 +122,24 @@ function readJsonlLog(logPath: string): Record<string, unknown>[] {
     .split('\n')
     .filter(line => line.trim())
     .map(line => JSON.parse(line));
+}
+
+function readGuardStateFile(projectDir: string): Record<string, unknown> {
+  const statePath = path.join(projectDir, '.claude/.guard-state.json');
+  return JSON.parse(fs.readFileSync(statePath, 'utf-8')) as Record<string, unknown>;
+}
+
+function expectSessionGuardState(
+  state: Record<string, unknown>,
+  sessionId: string,
+  activeSubagent: string
+): void {
+  expect(state).toHaveProperty(sessionId);
+  expect(state).toHaveProperty([sessionId, 'activeSubagent'], activeSubagent);
+  expect(state).toHaveProperty([sessionId, 'sessionId'], sessionId);
+  expect(state).toHaveProperty([sessionId, 'lastUpdated']);
+  expect(state).not.toHaveProperty('activeSubagent');
+  expect(state).not.toHaveProperty('sessionId');
 }
 
 // ============================================================================
@@ -174,7 +192,7 @@ describe('prevent-test-edit.ts stdio', () => {
     expect(parsed.hookSpecificOutput?.permissionDecisionReason).toContain('Cannot modify test files');
   });
 
-  it('returns allow JSON for PreToolUse + Task(tdd-test-writer)', () => {
+  it('returns allow JSON for PreToolUse + Task(tdd-test-writer) and persists session-keyed state', () => {
     const result = runHook('.claude/hooks/prevent-test-edit.ts', {
       cwd: tmpDir,
       input: {
@@ -193,8 +211,8 @@ describe('prevent-test-edit.ts stdio', () => {
     // Verify state was written
     const statePath = path.join(tmpDir, '.claude/.guard-state.json');
     expect(fs.existsSync(statePath)).toBe(true);
-    const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    expect(state.activeSubagent).toBe('tdd-test-writer');
+    const state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'test-session-001', 'tdd-test-writer');
   });
 
   it('returns empty JSON for SubagentStop', () => {
@@ -459,7 +477,7 @@ describe('state side effects', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('Task(tdd-implementer) creates .guard-state.json with activeSubagent=tdd-implementer', () => {
+  it('Task(tdd-implementer) creates a session-keyed .guard-state.json entry', () => {
     const result = runHook('.claude/hooks/prevent-test-edit.ts', {
       cwd: tmpDir,
       input: {
@@ -475,12 +493,11 @@ describe('state side effects', () => {
 
     const statePath = path.join(tmpDir, '.claude/.guard-state.json');
     expect(fs.existsSync(statePath)).toBe(true);
-    const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    expect(state.activeSubagent).toBe('tdd-implementer');
-    expect(state.sessionId).toBe('test-session-001');
+    const state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'test-session-001', 'tdd-implementer');
   });
 
-  it('SubagentStop resets .guard-state.json to activeSubagent=main', () => {
+  it('SubagentStop resets only the current session entry to main', () => {
     // First, set state to tdd-implementer
     runHook('.claude/hooks/prevent-test-edit.ts', {
       cwd: tmpDir,
@@ -506,12 +523,11 @@ describe('state side effects', () => {
     expect(result.exitCode).toBe(0);
 
     const statePath = path.join(tmpDir, '.claude/.guard-state.json');
-    const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    expect(state.activeSubagent).toBe('main');
-    expect(state.sessionId).toBe('test-session-001');
+    const state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'test-session-001', 'main');
   });
 
-  it('sequential Task + deny + Stop produces correct violation log + state transitions', () => {
+  it('sequential Task + deny + Stop keeps state transitions session-keyed', () => {
     // Step 1: Task(tdd-implementer) - state = tdd-implementer
     runHook('.claude/hooks/prevent-test-edit.ts', {
       cwd: tmpDir,
@@ -525,8 +541,8 @@ describe('state side effects', () => {
     });
 
     let statePath = path.join(tmpDir, '.claude/.guard-state.json');
-    let state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    expect(state.activeSubagent).toBe('tdd-implementer');
+    let state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'test-session-001', 'tdd-implementer');
 
     // Step 2: Write to tests/ - should deny
     const denyResult = runHook('.claude/hooks/prevent-test-edit.ts', {
@@ -563,8 +579,8 @@ describe('state side effects', () => {
       },
     });
 
-    state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    expect(state.activeSubagent).toBe('main');
+    state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'test-session-001', 'main');
   });
 });
 
@@ -603,18 +619,20 @@ describe('prevent-test-edit.ts — Cursor dual-format input parsing', () => {
     // Guard state must reflect the subagent from subagent_type field
     const statePath = path.join(tmpDir, '.claude/.guard-state.json');
     expect(fs.existsSync(statePath)).toBe(true);
-    const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    expect(state.activeSubagent).toBe('tdd-implementer');
+    const state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'conv-001', 'tdd-implementer');
   });
 
-  it('handles camelCase subagentStop (Cursor format) and resets guard state', () => {
+  it('handles camelCase subagentStop (Cursor format) and resets only that session entry', () => {
     // Pre-set state to tdd-implementer
     fs.writeFileSync(
       path.join(tmpDir, '.claude/.guard-state.json'),
       JSON.stringify({
-        activeSubagent: 'tdd-implementer',
-        lastUpdated: new Date().toISOString(),
-        sessionId: 'conv-001',
+        'conv-001': {
+          activeSubagent: 'tdd-implementer',
+          lastUpdated: new Date().toISOString(),
+          sessionId: 'conv-001',
+        },
       })
     );
 
@@ -635,8 +653,8 @@ describe('prevent-test-edit.ts — Cursor dual-format input parsing', () => {
 
     // Guard state must be reset to main
     const statePath = path.join(tmpDir, '.claude/.guard-state.json');
-    const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    expect(state.activeSubagent).toBe('main');
+    const state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'conv-001', 'main');
   });
 
   it('maps Shell tool to Bash handler — blocks write to tests/ in tdd-implementer phase', () => {
@@ -644,9 +662,11 @@ describe('prevent-test-edit.ts — Cursor dual-format input parsing', () => {
     fs.writeFileSync(
       path.join(tmpDir, '.claude/.guard-state.json'),
       JSON.stringify({
-        activeSubagent: 'tdd-implementer',
-        lastUpdated: new Date().toISOString(),
-        sessionId: 'test-001',
+        'test-001': {
+          activeSubagent: 'tdd-implementer',
+          lastUpdated: new Date().toISOString(),
+          sessionId: 'test-001',
+        },
       })
     );
 
@@ -668,19 +688,20 @@ describe('prevent-test-edit.ts — Cursor dual-format input parsing', () => {
     expect(parsed.hookSpecificOutput?.permissionDecision).toBe('deny');
   });
 
-  it('uses conversation_id as session fallback when session_id is absent — enables cross-session isolation', () => {
-    // A tdd-implementer is active in a DIFFERENT session ('OTHER-SESSION')
-    fs.writeFileSync(
-      path.join(tmpDir, '.claude/.guard-state.json'),
-      JSON.stringify({
-        activeSubagent: 'tdd-implementer',
-        lastUpdated: new Date().toISOString(),
-        sessionId: 'OTHER-SESSION',
-      })
-    );
+  it('uses conversation_id as session fallback and denies test writes when that session has no guard state', () => {
+    runHook('.claude/hooks/prevent-test-edit.ts', {
+      cwd: tmpDir,
+      input: {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Task',
+        tool_input: { subagent_type: 'tdd-implementer' },
+        cwd: tmpDir,
+        session_id: 'OTHER-SESSION',
+      },
+    });
 
-    // This hook call belongs to a NEW session ('conv-123') identified via conversation_id only
-    // Since sessions differ, the OTHER-SESSION's tdd-implementer must not affect this session
+    // This hook call belongs to a NEW session ('conv-123') identified via conversation_id only.
+    // With session-keyed state, missing entry lookup must fail closed instead of reopening as main.
     const result = runHook('.claude/hooks/prevent-test-edit.ts', {
       cwd: tmpDir,
       input: {
@@ -695,8 +716,11 @@ describe('prevent-test-edit.ts — Cursor dual-format input parsing', () => {
 
     expect(result.exitCode).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    // This session ('conv-123') is effectively 'main' — other session's tdd-implementer must not block it
-    expect(parsed.hookSpecificOutput?.permissionDecision).toBe('allow');
+    expect(parsed.hookSpecificOutput?.permissionDecision).toBe('deny');
+    expect(parsed.hookSpecificOutput?.permissionDecisionReason).toContain('unknown state');
+
+    const seededState = readGuardStateFile(tmpDir);
+    expectSessionGuardState(seededState, 'OTHER-SESSION', 'tdd-implementer');
   });
 
   it('exits with code 2 in Cursor environment when decision is deny', () => {
@@ -704,9 +728,11 @@ describe('prevent-test-edit.ts — Cursor dual-format input parsing', () => {
     fs.writeFileSync(
       path.join(tmpDir, '.claude/.guard-state.json'),
       JSON.stringify({
-        activeSubagent: 'tdd-implementer',
-        lastUpdated: new Date().toISOString(),
-        sessionId: 'test-001',
+        'test-001': {
+          activeSubagent: 'tdd-implementer',
+          lastUpdated: new Date().toISOString(),
+          sessionId: 'test-001',
+        },
       })
     );
 
@@ -735,9 +761,11 @@ describe('prevent-test-edit.ts — Cursor dual-format input parsing', () => {
     fs.writeFileSync(
       path.join(tmpDir, '.claude/.guard-state.json'),
       JSON.stringify({
-        activeSubagent: 'tdd-implementer',
-        lastUpdated: new Date().toISOString(),
-        sessionId: 'test-002',
+        'test-002': {
+          activeSubagent: 'tdd-implementer',
+          lastUpdated: new Date().toISOString(),
+          sessionId: 'test-002',
+        },
       })
     );
 
@@ -793,7 +821,7 @@ describe('cursor-session-init.ts stdio', () => {
     expect(parsed.additional_context).toContain('TDD');
   });
 
-  it('writes .guard-state.json with activeSubagent main and sessionId after sessionStart', () => {
+  it('writes a session-keyed .guard-state.json entry after sessionStart', () => {
     const result = runHook('.claude/hooks/cursor-session-init.ts', {
       cwd: tmpDir,
       input: {
@@ -809,9 +837,8 @@ describe('cursor-session-init.ts stdio', () => {
     const guardStatePath = path.join(tmpDir, '.claude/.guard-state.json');
     expect(fs.existsSync(guardStatePath)).toBe(true);
 
-    const state = JSON.parse(fs.readFileSync(guardStatePath, 'utf-8'));
-    expect(state.activeSubagent).toBe('main');
-    expect(state.sessionId).toBe('test-session-001');
+    const state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'test-session-001', 'main');
   });
 
   it('returns {} and exits with code 0 on corrupt stdin', () => {

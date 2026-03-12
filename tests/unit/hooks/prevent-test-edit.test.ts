@@ -75,6 +75,20 @@ describe('handleFileEdit - test file protection', () => {
     expect(result.hookSpecificOutput?.permissionDecisionReason).toContain('unknown state');
   });
 
+  it('DENY: Write to tests/ when persisted state belongs to another session (fail-closed unknown)', () => {
+    writeState({
+      activeSubagent: 'tdd-implementer',
+      lastUpdated: new Date().toISOString(),
+      sessionId: 'other-session-999',
+    });
+    setCurrentSessionId('test-session-001');
+
+    const result = handleFileEdit('Write', { file_path: 'tests/unit/foo.test.ts', content: 'test' });
+
+    expect(result.hookSpecificOutput?.permissionDecision).toBe('deny');
+    expect(result.hookSpecificOutput?.permissionDecisionReason).toContain('unknown state');
+  });
+
   it('ALLOW: Write to tests/ when activeSubagent=tdd-test-writer', () => {
     setupState('tdd-test-writer');
     const result = handleFileEdit('Write', { file_path: 'tests/unit/foo.test.ts', content: 'test' });
@@ -586,7 +600,7 @@ describe('readState - edge cases', () => {
     expect(result.activeSubagent).toBe('unknown');
   });
 
-  it('returns main when session ID differs from current session', () => {
+  it('returns unknown when session ID differs from current session', () => {
     // Write a state for a different session
     writeState({
       activeSubagent: 'tdd-implementer',
@@ -598,7 +612,7 @@ describe('readState - edge cases', () => {
     setCurrentSessionId('new-session-001');
 
     const result = readState();
-    expect(result.activeSubagent).toBe('main');
+    expect(result.activeSubagent).toBe('unknown');
   });
 
   it('returns unknown state when file is missing', () => {
