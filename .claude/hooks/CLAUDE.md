@@ -71,7 +71,7 @@ Shared library. No `main()`. All exports are pure functions or constants.
 | `contentHasSkipPatterns(content)` | Detects `.skip`, `.only`, `xdescribe`, `xit`, `if(false)` |
 | `bashCommandWritesToTests(cmd)` | Detects bash writes to `tests/` |
 | `sanitizeCommand(cmd)` | Redacts secrets; returns hash + prefix/suffix for safe logging |
-| `redactSensitiveSegment(value)` | Redacts `--token=`, `Bearer `, `password=`, etc. |
+| `redactSensitiveSegment(value)` | Redacts `--token=`, `Bearer`, `password=`, etc. |
 
 ## prevent-test-edit.ts
 
