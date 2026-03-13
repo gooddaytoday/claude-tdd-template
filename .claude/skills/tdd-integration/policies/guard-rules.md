@@ -4,14 +4,14 @@ Machine-readable policy consumed by `prevent-test-edit.ts` hook. Defines who can
 
 ## Role-Permission Matrix
 
-| Path Pattern | tdd-test-writer | tdd-implementer | tdd-refactorer | tdd-code-reviewer | tdd-architect-reviewer | tdd-documenter | main | unknown |
-|---|---|---|---|---|---|---|---|---|
-| `tests/**` | write | deny | deny | deny | deny | deny | write | deny |
-| `jest*.config.*` | write | ask | ask | deny | deny | deny | write | ask |
-| `.claude/hooks/**` | deny | deny | deny | deny | deny | deny | ask | deny |
-| `.claude/skills/**` | deny | deny | deny | deny | deny | deny | ask | deny |
-| `.claude/settings.json` | deny | deny | deny | deny | deny | deny | ask | deny |
-| `src/**` | deny | write | write | deny | deny | deny | write | ask |
+| Path Pattern | tdd-test-writer | tdd-implementer | tdd-refactorer | tdd-code-reviewer | tdd-architect-reviewer | tdd-documenter | tdd-telemetry-reporter | main | unknown |
+|---|---|---|---|---|---|---|---|---|---|
+| `tests/**` | write | deny | deny | deny | deny | deny | deny | write | deny |
+| `jest*.config.*` | write | ask | ask | deny | deny | deny | deny | write | ask |
+| `.claude/hooks/**` | deny | deny | deny | deny | deny | deny | deny | ask | deny |
+| `.claude/skills/**` | deny | deny | deny | deny | deny | deny | deny | ask | deny |
+| `.claude/settings.json` | deny | deny | deny | deny | deny | deny | deny | ask | deny |
+| `src/**` | deny | write | write | deny | deny | deny | deny | write | ask |
 
 **Legend**: `write` = allow, `deny` = block, `ask` = prompt user for confirmation
 
