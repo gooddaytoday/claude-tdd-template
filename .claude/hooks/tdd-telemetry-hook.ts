@@ -95,7 +95,7 @@ export function main(): void {
 
     const projectRoot = getProjectRoot(inputData.cwd);
     const now = new Date().toISOString();
-    const startedAt = inputData.duration
+    const startedAt = Number.isFinite(inputData.duration)
       ? new Date(Date.now() - inputData.duration).toISOString()
       : '';
     const event: SubagentTimingEvent = {
