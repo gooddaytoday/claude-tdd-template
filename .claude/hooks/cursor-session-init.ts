@@ -60,10 +60,10 @@ export function main(): void {
 
     writeState(state);
     stdout.write(JSON.stringify(response));
-    process.exit(0);
+    process.exitCode = 0;
   } catch {
     stdout.write(JSON.stringify({}));
-    process.exit(0);
+    process.exitCode = 0;
   }
 }
 

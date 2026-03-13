@@ -75,9 +75,9 @@ export function logTimingEvent(event: SubagentTimingEvent, projectRoot: string):
   }
 }
 
-function exitOk(): never {
+function exitOk(): void {
   stdout.write(JSON.stringify({}));
-  process.exit(0);
+  process.exitCode = 0;
 }
 
 export function main(): void {
@@ -87,11 +87,11 @@ export function main(): void {
     const hookEventName = (inputData.hook_event_name || '').toLowerCase();
     const agentType = inputData.agent_type || inputData.subagent_type || '';
 
-    if (hookEventName !== 'subagentstop') exitOk();
-    if (!agentType.startsWith('tdd-')) exitOk();
+    if (hookEventName !== 'subagentstop') { exitOk(); return; }
+    if (!agentType.startsWith('tdd-')) { exitOk(); return; }
 
     const phase = agentTypeToPhase(agentType);
-    if (!phase) exitOk();
+    if (!phase) { exitOk(); return; }
 
     const projectRoot = getProjectRoot(inputData.cwd);
     const now = new Date().toISOString();
