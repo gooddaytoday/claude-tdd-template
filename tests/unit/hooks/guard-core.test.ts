@@ -10,6 +10,9 @@ import {
   isJestConfigFile,
   isEnforcementFile,
   getProjectRoot,
+  bashCommandWritesToTests,
+  bashCommandWritesToJestConfig,
+  bashCommandWritesToEnforcementFiles,
   type ViolationEvent,
 } from '../../../.claude/hooks/lib/guard-core';
 
@@ -265,6 +268,77 @@ describe('logViolationEvent environment enrichment', () => {
     const line = fs.readFileSync(violationsPath(), 'utf-8').trim();
     const written = JSON.parse(line) as Record<string, unknown>;
     expect(written).toHaveProperty('environment', 'claude-code');
+  });
+});
+
+// ============================================================================
+// bashCommandWritesToTests — touch and mkdir patterns
+// ============================================================================
+describe('bashCommandWritesToTests — touch and mkdir patterns', () => {
+  it('detects touch targeting a unit test file', () => {
+    expect(bashCommandWritesToTests('touch tests/unit/foo.test.ts')).toBe(true);
+  });
+
+  it('detects touch targeting an integration test file', () => {
+    expect(bashCommandWritesToTests('touch tests/integration/bar.test.ts')).toBe(true);
+  });
+
+  it('detects mkdir targeting the tests directory', () => {
+    expect(bashCommandWritesToTests('mkdir tests/unit/new-dir')).toBe(true);
+  });
+
+  it('detects mkdir -p targeting a deeply nested tests directory', () => {
+    expect(bashCommandWritesToTests('mkdir -p tests/unit/deep/nested')).toBe(true);
+  });
+
+  it('does not false-positive on touch of a src file whose name contains the word tests', () => {
+    expect(bashCommandWritesToTests('touch src/tests-helper.ts')).toBe(false);
+  });
+
+  it('does not false-positive on mkdir of a src directory whose name contains the word testing', () => {
+    expect(bashCommandWritesToTests('mkdir src/testing')).toBe(false);
+  });
+});
+
+// ============================================================================
+// bashCommandWritesToJestConfig — touch and mkdir patterns
+// ============================================================================
+describe('bashCommandWritesToJestConfig — touch and mkdir patterns', () => {
+  it('detects touch targeting jest.config.ts', () => {
+    expect(bashCommandWritesToJestConfig('touch jest.config.ts')).toBe(true);
+  });
+
+  it('detects touch targeting a custom jest config file', () => {
+    expect(bashCommandWritesToJestConfig('touch jest.custom.config.js')).toBe(true);
+  });
+
+  it('detects mkdir whose argument is a jest config filename (pathological but caught)', () => {
+    expect(bashCommandWritesToJestConfig('mkdir -p jest.config.ts')).toBe(true);
+  });
+});
+
+// ============================================================================
+// bashCommandWritesToEnforcementFiles — touch and mkdir patterns
+// ============================================================================
+describe('bashCommandWritesToEnforcementFiles — touch and mkdir patterns', () => {
+  it('detects touch targeting a new file inside .claude/hooks', () => {
+    expect(bashCommandWritesToEnforcementFiles('touch .claude/hooks/new-hook.ts')).toBe(true);
+  });
+
+  it('detects touch targeting a new file inside .claude/skills', () => {
+    expect(bashCommandWritesToEnforcementFiles('touch .claude/skills/new-skill.md')).toBe(true);
+  });
+
+  it('detects touch targeting .claude/settings.json', () => {
+    expect(bashCommandWritesToEnforcementFiles('touch .claude/settings.json')).toBe(true);
+  });
+
+  it('detects mkdir -p targeting a subdirectory of .claude/hooks', () => {
+    expect(bashCommandWritesToEnforcementFiles('mkdir -p .claude/hooks/new-dir')).toBe(true);
+  });
+
+  it('detects mkdir targeting a subdirectory of .claude/skills', () => {
+    expect(bashCommandWritesToEnforcementFiles('mkdir .claude/skills/lib')).toBe(true);
   });
 });
 

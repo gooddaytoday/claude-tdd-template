@@ -47,12 +47,14 @@ export const BASH_WRITE_TEST_PATTERNS: RegExp[] = [
   /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\s*(?:''|"")?|--in-place(?:=(?:''|"")?)?\s+).*tests[\\/]/,
   /\b(?:echo|printf)\b.*(?:>>?|tee\s)\s*['"]?[^\s'"]*tests[\\/]/,
   /\bcat\b.*(?:>>?)\s+['"]?[^\s'"]*tests[\\/]/,
+  /\b(?:touch|mkdir)\b.*\btests[\\/]/,
 ];
 
 export const BASH_WRITE_JEST_PATTERNS: RegExp[] = [
   /(?:>>?|tee(?:\s+-a)?)\s+['"]?[^\s'"]*jest(?:\.[^/\\'"\s]*)?\.config\.[jt]s/,
   /\b(?:cp|mv)\b.*jest(?:\.[^/\\'"\s]*)?\.config\.[jt]s/,
   /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\s*(?:''|"")?|--in-place(?:=(?:''|"")?)?\s+).*jest(?:\.[^/\\'"\s]*)?\.config\.[jt]s/,
+  /\b(?:touch|mkdir)\b.*jest(?:\.[^/\\'"\s]*)?\.config\.[jt]s/,
 ];
 
 export const BASH_WRITE_ENFORCEMENT_PATTERNS: RegExp[] = [
@@ -62,6 +64,8 @@ export const BASH_WRITE_ENFORCEMENT_PATTERNS: RegExp[] = [
   /\b(?:cp|mv)\b.*\.claude[\\/]settings\.json/,
   /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\s*(?:''|"")?|--in-place(?:=(?:''|"")?)?\s+).*\.claude[\\/](?:hooks|skills)[\\/]/,
   /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\s*(?:''|"")?|--in-place(?:=(?:''|"")?)?\s+).*\.claude[\\/]settings\.json/,
+  /\b(?:touch|mkdir)\b.*\.claude[\\/](?:hooks|skills)[\\/]/,
+  /\b(?:touch|mkdir)\b.*\.claude[\\/]settings\.json/,
 ];
 
 export const SKIP_PATTERNS = /\b(?:describe|it|test)\.(?:skip|only)\b|\bx(?:describe|it|test)\b|\bif\s*\(\s*false\s*\)/;
