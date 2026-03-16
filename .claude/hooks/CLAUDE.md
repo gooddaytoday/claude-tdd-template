@@ -41,7 +41,7 @@ Note: `'ask'` is normalized to `'deny'` in Cursor output (Cursor does not suppor
 
 ## lib/guard-core.ts
 
-Shared library. No `main()`. All exports are pure functions or constants.
+Shared library. No `main()`. Exports include pure utilities plus state/telemetry helpers that interact with the filesystem.
 
 ### Exports
 
