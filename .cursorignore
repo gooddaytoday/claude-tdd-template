@@ -1,0 +1,12 @@
+# Secrets and environment
+.env
+.env.*
+secrets/
+.git/config
+
+# Build artifacts
+node_modules/
+dist/
+
+# Large trace files (not useful in LLM context)
+airefinement/artifacts/traces/

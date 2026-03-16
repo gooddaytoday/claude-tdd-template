@@ -101,7 +101,7 @@ function runHook(
     stderr: result.stderr || '',
     exitCode: result.status ?? (result.error ? 1 : 0),
     signal: result.signal ?? null,
-    timedOut: result.error?.code === 'ETIMEDOUT',
+    timedOut: (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT',
     error: result.error,
   };
 }
@@ -122,6 +122,24 @@ function readJsonlLog(logPath: string): Record<string, unknown>[] {
     .split('\n')
     .filter(line => line.trim())
     .map(line => JSON.parse(line));
+}
+
+function readGuardStateFile(projectDir: string): Record<string, unknown> {
+  const statePath = path.join(projectDir, '.claude/.guard-state.json');
+  return JSON.parse(fs.readFileSync(statePath, 'utf-8')) as Record<string, unknown>;
+}
+
+function expectSessionGuardState(
+  state: Record<string, unknown>,
+  sessionId: string,
+  activeSubagent: string
+): void {
+  expect(state).toHaveProperty(sessionId);
+  expect(state).toHaveProperty([sessionId, 'activeSubagent'], activeSubagent);
+  expect(state).toHaveProperty([sessionId, 'sessionId'], sessionId);
+  expect(state).toHaveProperty([sessionId, 'lastUpdated']);
+  expect(state).not.toHaveProperty('activeSubagent');
+  expect(state).not.toHaveProperty('sessionId');
 }
 
 // ============================================================================
@@ -174,7 +192,7 @@ describe('prevent-test-edit.ts stdio', () => {
     expect(parsed.hookSpecificOutput?.permissionDecisionReason).toContain('Cannot modify test files');
   });
 
-  it('returns allow JSON for PreToolUse + Task(tdd-test-writer)', () => {
+  it('returns allow JSON for PreToolUse + Task(tdd-test-writer) and persists session-keyed state', () => {
     const result = runHook('.claude/hooks/prevent-test-edit.ts', {
       cwd: tmpDir,
       input: {
@@ -193,8 +211,8 @@ describe('prevent-test-edit.ts stdio', () => {
     // Verify state was written
     const statePath = path.join(tmpDir, '.claude/.guard-state.json');
     expect(fs.existsSync(statePath)).toBe(true);
-    const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    expect(state.activeSubagent).toBe('tdd-test-writer');
+    const state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'test-session-001', 'tdd-test-writer');
   });
 
   it('returns empty JSON for SubagentStop', () => {
@@ -394,6 +412,57 @@ describe('user-prompt-skill-eval.ts stdio', () => {
   });
 });
 
+/**
+ * Run hook with custom environment variables (for CURSOR_VERSION testing)
+ */
+function runHookWithEnv(
+  hookPath: string,
+  options: {
+    input?: unknown;
+    rawInput?: string;
+    cwd?: string;
+    timeout?: number;
+    env?: Record<string, string | undefined>;
+  } = {}
+): HookResult {
+  const repoRoot = getRepoRoot();
+  const absoluteHookPath = path.resolve(repoRoot, hookPath);
+
+  let stdin: string;
+  if (options.rawInput !== undefined) {
+    stdin = options.rawInput;
+  } else if (options.input !== undefined) {
+    stdin = JSON.stringify(options.input);
+  } else {
+    stdin = '';
+  }
+
+  const result = spawnSync(
+    'npx',
+    ['--prefix', repoRoot, 'tsx', absoluteHookPath],
+    {
+      cwd: options.cwd || process.cwd(),
+      input: stdin,
+      encoding: 'utf-8',
+      timeout: options.timeout ?? 15000,
+      env: {
+        ...process.env,
+        JEST_WORKER_ID: undefined,
+        ...(options.env || {}),
+      },
+    }
+  );
+
+  return {
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    exitCode: result.status ?? (result.error ? 1 : 0),
+    signal: result.signal ?? null,
+    timedOut: (result.error as NodeJS.ErrnoException)?.code === 'ETIMEDOUT',
+    error: result.error,
+  };
+}
+
 // ============================================================================
 // 7.4 State file side effects -- 3 test cases
 // ============================================================================
@@ -408,7 +477,7 @@ describe('state side effects', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('Task(tdd-implementer) creates .guard-state.json with activeSubagent=tdd-implementer', () => {
+  it('Task(tdd-implementer) creates a session-keyed .guard-state.json entry', () => {
     const result = runHook('.claude/hooks/prevent-test-edit.ts', {
       cwd: tmpDir,
       input: {
@@ -424,12 +493,11 @@ describe('state side effects', () => {
 
     const statePath = path.join(tmpDir, '.claude/.guard-state.json');
     expect(fs.existsSync(statePath)).toBe(true);
-    const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    expect(state.activeSubagent).toBe('tdd-implementer');
-    expect(state.sessionId).toBe('test-session-001');
+    const state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'test-session-001', 'tdd-implementer');
   });
 
-  it('SubagentStop resets .guard-state.json to activeSubagent=main', () => {
+  it('SubagentStop resets only the current session entry to main', () => {
     // First, set state to tdd-implementer
     runHook('.claude/hooks/prevent-test-edit.ts', {
       cwd: tmpDir,
@@ -455,12 +523,11 @@ describe('state side effects', () => {
     expect(result.exitCode).toBe(0);
 
     const statePath = path.join(tmpDir, '.claude/.guard-state.json');
-    const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    expect(state.activeSubagent).toBe('main');
-    expect(state.sessionId).toBe('test-session-001');
+    const state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'test-session-001', 'main');
   });
 
-  it('sequential Task + deny + Stop produces correct violation log + state transitions', () => {
+  it('sequential Task + deny + Stop keeps state transitions session-keyed', () => {
     // Step 1: Task(tdd-implementer) - state = tdd-implementer
     runHook('.claude/hooks/prevent-test-edit.ts', {
       cwd: tmpDir,
@@ -474,8 +541,8 @@ describe('state side effects', () => {
     });
 
     let statePath = path.join(tmpDir, '.claude/.guard-state.json');
-    let state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    expect(state.activeSubagent).toBe('tdd-implementer');
+    let state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'test-session-001', 'tdd-implementer');
 
     // Step 2: Write to tests/ - should deny
     const denyResult = runHook('.claude/hooks/prevent-test-edit.ts', {
@@ -512,7 +579,295 @@ describe('state side effects', () => {
       },
     });
 
-    state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    expect(state.activeSubagent).toBe('main');
+    state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'test-session-001', 'main');
+  });
+});
+
+// ============================================================================
+// 2.2 Cursor dual-format input parsing -- 5 test cases
+// Task 2.2: camelCase normalization, Shell→Bash mapping, conversation_id fallback,
+//           subagent_type fallback, Cursor exit code 2
+// ============================================================================
+describe('prevent-test-edit.ts — Cursor dual-format input parsing', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = setupTempProject();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('handles camelCase subagentStart (Cursor format) and reads subagent_type', () => {
+    // Cursor sends 'subagentStart' (camelCase) and 'subagent_type' instead of 'agent_type'
+    const result = runHook('.claude/hooks/prevent-test-edit.ts', {
+      cwd: tmpDir,
+      input: {
+        hook_event_name: 'subagentStart',
+        subagent_type: 'tdd-implementer',
+        conversation_id: 'conv-001',
+        cwd: tmpDir,
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    // stdout must be valid JSON
+    expect(() => JSON.parse(result.stdout)).not.toThrow();
+
+    // Guard state must reflect the subagent from subagent_type field
+    const statePath = path.join(tmpDir, '.claude/.guard-state.json');
+    expect(fs.existsSync(statePath)).toBe(true);
+    const state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'conv-001', 'tdd-implementer');
+  });
+
+  it('handles camelCase subagentStop (Cursor format) and resets only that session entry', () => {
+    // Pre-set state to tdd-implementer
+    fs.writeFileSync(
+      path.join(tmpDir, '.claude/.guard-state.json'),
+      JSON.stringify({
+        'conv-001': {
+          activeSubagent: 'tdd-implementer',
+          lastUpdated: new Date().toISOString(),
+          sessionId: 'conv-001',
+        },
+      })
+    );
+
+    // Cursor sends 'subagentStop' (camelCase) with conversation_id (no session_id)
+    const result = runHook('.claude/hooks/prevent-test-edit.ts', {
+      cwd: tmpDir,
+      input: {
+        hook_event_name: 'subagentStop',
+        conversation_id: 'conv-001',
+        cwd: tmpDir,
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    // SubagentStop must return empty object {}
+    const parsed = JSON.parse(result.stdout);
+    expect(Object.keys(parsed).length).toBe(0);
+
+    // Guard state must be reset to main
+    const statePath = path.join(tmpDir, '.claude/.guard-state.json');
+    const state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'conv-001', 'main');
+  });
+
+  it('maps Shell tool to Bash handler — blocks write to tests/ in tdd-implementer phase', () => {
+    // Pre-set state to tdd-implementer (GREEN phase — cannot touch tests/)
+    fs.writeFileSync(
+      path.join(tmpDir, '.claude/.guard-state.json'),
+      JSON.stringify({
+        'test-001': {
+          activeSubagent: 'tdd-implementer',
+          lastUpdated: new Date().toISOString(),
+          sessionId: 'test-001',
+        },
+      })
+    );
+
+    // Cursor uses 'Shell' instead of 'Bash' for shell commands
+    const result = runHook('.claude/hooks/prevent-test-edit.ts', {
+      cwd: tmpDir,
+      input: {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Shell',
+        tool_input: { command: 'cat > tests/unit/foo.test.ts <<EOF\nconst x = 1;\nEOF' },
+        session_id: 'test-001',
+        cwd: tmpDir,
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    // Shell writing to tests/ during tdd-implementer must be blocked (same as Bash)
+    expect(parsed.hookSpecificOutput?.permissionDecision).toBe('deny');
+  });
+
+  it('uses conversation_id as session fallback and denies test writes when that session has no guard state', () => {
+    runHook('.claude/hooks/prevent-test-edit.ts', {
+      cwd: tmpDir,
+      input: {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Task',
+        tool_input: { subagent_type: 'tdd-implementer' },
+        cwd: tmpDir,
+        session_id: 'OTHER-SESSION',
+      },
+    });
+
+    // This hook call belongs to a NEW session ('conv-123') identified via conversation_id only.
+    // With session-keyed state, missing entry lookup must fail closed instead of reopening as main.
+    const result = runHook('.claude/hooks/prevent-test-edit.ts', {
+      cwd: tmpDir,
+      input: {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Write',
+        tool_input: { file_path: 'tests/unit/foo.test.ts', content: 'const x = 1;' },
+        conversation_id: 'conv-123',
+        cwd: tmpDir,
+        // NOTE: no session_id field — main() must fall back to conversation_id
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.hookSpecificOutput?.permissionDecision).toBe('deny');
+    expect(parsed.hookSpecificOutput?.permissionDecisionReason).toContain('unknown state');
+
+    const seededState = readGuardStateFile(tmpDir);
+    expectSessionGuardState(seededState, 'OTHER-SESSION', 'tdd-implementer');
+  });
+
+  it('exits with code 2 in Cursor environment when decision is deny', () => {
+    // Pre-set state to tdd-implementer
+    fs.writeFileSync(
+      path.join(tmpDir, '.claude/.guard-state.json'),
+      JSON.stringify({
+        'test-001': {
+          activeSubagent: 'tdd-implementer',
+          lastUpdated: new Date().toISOString(),
+          sessionId: 'test-001',
+        },
+      })
+    );
+
+    // Run with CURSOR_VERSION env — Cursor format requires exit code 2 for deny
+    const result = runHookWithEnv('.claude/hooks/prevent-test-edit.ts', {
+      cwd: tmpDir,
+      env: { CURSOR_VERSION: '1.0' },
+      input: {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Write',
+        tool_input: { file_path: 'tests/unit/foo.test.ts', content: 'x' },
+        session_id: 'test-001',
+        cwd: tmpDir,
+      },
+    });
+
+    // Cursor format: deny must produce exit code 2
+    expect(result.exitCode).toBe(2);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.decision).toBe('deny');
+    expect(parsed.reason).toBeDefined();
+  });
+
+  it('exits with code 2 in Cursor environment when decision is ask (ask mapped to deny)', () => {
+    // Pre-set state to tdd-implementer — jest.config edit triggers 'ask' in handleBashCommand
+    fs.writeFileSync(
+      path.join(tmpDir, '.claude/.guard-state.json'),
+      JSON.stringify({
+        'test-002': {
+          activeSubagent: 'tdd-implementer',
+          lastUpdated: new Date().toISOString(),
+          sessionId: 'test-002',
+        },
+      })
+    );
+
+    // Use a Bash command that writes to jest.config — guard returns 'ask' for jest config edits
+    const result = runHookWithEnv('.claude/hooks/prevent-test-edit.ts', {
+      cwd: tmpDir,
+      env: { CURSOR_VERSION: '1.0' },
+      input: {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Bash',
+        tool_input: { command: 'echo "x" > jest.config.ts' },
+        session_id: 'test-002',
+        cwd: tmpDir,
+      },
+    });
+
+    // Cursor maps 'ask' -> 'deny' and exit code 2 (not 0), so the action is blocked
+    expect(result.exitCode).toBe(2);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.decision).toBe('deny');
+    expect(parsed.reason).toBeDefined();
+  });
+});
+
+// ============================================================================
+// cursor-session-init.ts stdio -- 4 test cases
+// ============================================================================
+describe('cursor-session-init.ts stdio', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = setupTempProject();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns valid JSON with additional_context containing TDD for sessionStart input', () => {
+    const result = runHook('.claude/hooks/cursor-session-init.ts', {
+      cwd: tmpDir,
+      input: {
+        hook_event_name: 'sessionStart',
+        session_id: 'test-session-001',
+        conversation_id: 'conv-001',
+        is_background_agent: false,
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(typeof parsed.additional_context).toBe('string');
+    expect(parsed.additional_context).toContain('TDD');
+  });
+
+  it('writes a session-keyed .guard-state.json entry after sessionStart', () => {
+    const result = runHook('.claude/hooks/cursor-session-init.ts', {
+      cwd: tmpDir,
+      input: {
+        hook_event_name: 'sessionStart',
+        session_id: 'test-session-001',
+        conversation_id: 'conv-001',
+        is_background_agent: false,
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+
+    const guardStatePath = path.join(tmpDir, '.claude/.guard-state.json');
+    expect(fs.existsSync(guardStatePath)).toBe(true);
+
+    const state = readGuardStateFile(tmpDir);
+    expectSessionGuardState(state, 'test-session-001', 'main');
+  });
+
+  it('returns {} and exits with code 0 on corrupt stdin', () => {
+    const result = runHook('.claude/hooks/cursor-session-init.ts', {
+      cwd: tmpDir,
+      rawInput: '{"bad json',
+    });
+
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed).toEqual({});
+  });
+
+  it('always exits with code 0 for both valid and invalid input', () => {
+    const validResult = runHook('.claude/hooks/cursor-session-init.ts', {
+      cwd: tmpDir,
+      input: {
+        hook_event_name: 'sessionStart',
+        session_id: 'test-session-002',
+        conversation_id: 'conv-002',
+        is_background_agent: false,
+      },
+    });
+    expect(validResult.exitCode).toBe(0);
+
+    const invalidResult = runHook('.claude/hooks/cursor-session-init.ts', {
+      cwd: tmpDir,
+      rawInput: 'not valid json at all!!!',
+    });
+    expect(invalidResult.exitCode).toBe(0);
   });
 });

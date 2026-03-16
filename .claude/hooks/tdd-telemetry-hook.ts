@@ -7,21 +7,24 @@
  * Does not block agent termination (telemetry is informational only).
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { stdout } from 'node:process';
+import { detectEnvironment } from './lib/guard-core';
 
 export interface SubagentStopInput {
-  session_id: string;
-  transcript_path: string;
+  session_id?: string;
+  transcript_path?: string;
   cwd: string;
-  permission_mode: string;
+  permission_mode?: string;
   hook_event_name: string;
-  stop_hook_active: boolean;
-  agent_id: string;
-  agent_type: string;
-  agent_transcript_path: string;
+  stop_hook_active?: boolean;
+  agent_id?: string;
+  agent_type?: string;
+  subagent_type?: string;
+  agent_transcript_path?: string;
   last_assistant_message?: string;
+  duration?: number;
 }
 
 export interface SubagentTimingEvent {
@@ -31,6 +34,7 @@ export interface SubagentTimingEvent {
   started_at: string;
   finished_at: string;
   tool_calls_count: number;
+  environment?: 'claude-code' | 'cursor';
 }
 
 // Map agent_type to phase name
@@ -60,71 +64,55 @@ export function getProjectRoot(cwd: string): string {
   return cwd;
 }
 
-export function setProjectRootForTest(root: string | null): void {
-  // Placeholder for test usage - allows override in tests if needed
-}
-
 export function logTimingEvent(event: SubagentTimingEvent, projectRoot: string): void {
   try {
     const logPath = join(projectRoot, 'airefinement/artifacts/traces/timings.jsonl');
     mkdirSync(dirname(logPath), { recursive: true });
-    appendFileSync(logPath, JSON.stringify(event) + '\n');
+    const enrichedEvent = { ...event, environment: event.environment || detectEnvironment() };
+    appendFileSync(logPath, JSON.stringify(enrichedEvent) + '\n');
   } catch {
     // Telemetry must not break the hook or block subagent termination
   }
+}
+
+function exitOk(): void {
+  stdout.write(JSON.stringify({}));
+  process.exitCode = 0;
 }
 
 export function main(): void {
   try {
     const inputData = JSON.parse(readFileSync(0, 'utf-8')) as SubagentStopInput;
 
-    const hookEventName = inputData.hook_event_name || '';
-    const agentType = inputData.agent_type || '';
+    const hookEventName = (inputData.hook_event_name || '').toLowerCase();
+    const agentType = inputData.agent_type || inputData.subagent_type || '';
 
-    // Only process SubagentStop events
-    if (hookEventName !== 'SubagentStop') {
-      stdout.write(JSON.stringify({}));
-      process.exit(0);
-    }
-
-    // Only log for tdd-* agents
-    if (!agentType.startsWith('tdd-')) {
-      stdout.write(JSON.stringify({}));
-      process.exit(0);
-    }
+    if (hookEventName !== 'subagentstop') { exitOk(); return; }
+    if (!agentType.startsWith('tdd-')) { exitOk(); return; }
 
     const phase = agentTypeToPhase(agentType);
-    if (!phase) {
-      // Unknown tdd-* agent type, skip logging
-      stdout.write(JSON.stringify({}));
-      process.exit(0);
-    }
+    if (!phase) { exitOk(); return; }
 
-    // Get project root
     const projectRoot = getProjectRoot(inputData.cwd);
-
-    // Create timing event
     const now = new Date().toISOString();
+    const startedAt = Number.isFinite(inputData.duration)
+      ? new Date(Date.now() - inputData.duration).toISOString()
+      : '';
     const event: SubagentTimingEvent = {
       timestamp: now,
       agent: agentType,
       phase: phase,
-      started_at: '', // Not available from SubagentStop input
+      started_at: startedAt,
       finished_at: now,
-      tool_calls_count: 0, // Not available from SubagentStop input
+      tool_calls_count: 0,
+      environment: detectEnvironment(),
     };
 
-    // Log the event
     logTimingEvent(event, projectRoot);
-
-    // Return empty object to allow subagent to stop
-    stdout.write(JSON.stringify({}));
-    process.exit(0);
+    exitOk();
   } catch {
-    // On unexpected failure, return empty object and allow subagent to stop
-    // Telemetry failure should not block normal operation
-    stdout.write(JSON.stringify({}));
-    process.exit(0);
+    // Telemetry failure must not block subagent termination
+    exitOk();
   }
 }
 

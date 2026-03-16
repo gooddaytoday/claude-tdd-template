@@ -1,0 +1,32 @@
+---
+alwaysApply: true
+---
+
+# TDD Guard Policy
+
+This project enforces strict Test-Driven Development. Technical hooks in `.claude/hooks/prevent-test-edit.ts` block violations automatically.
+
+## Absolute Rules
+
+1. NEVER modify files in `tests/**` unless you are the `tdd-test-writer` subagent in the RED phase.
+2. NEVER add `.skip`, `.only`, `xdescribe`, `xit`, `xtest`, or `if(false)` to test files.
+3. NEVER modify `.claude/hooks/**`, `.claude/skills/**`, or `.claude/settings.json` during a TDD cycle.
+4. NEVER write implementation code before a failing test exists.
+5. NEVER skip phases or proceed without verifying gate conditions.
+
+## Phase Permissions
+
+| Phase | Can modify tests/** | Can modify src/** |
+|-------|--------------------|--------------------|
+| RED (tdd-test-writer) | YES | NO |
+| GREEN (tdd-implementer) | NO | YES |
+| REFACTOR (tdd-refactorer) | NO | YES |
+| CODE REVIEW (tdd-code-reviewer) | NO | NO (read-only) |
+| ARCH REVIEW (tdd-architect-reviewer) | NO | NO (read-only) |
+| DOCS (tdd-documenter) | NO | YES (CLAUDE.md only) |
+| TELEMETRY (tdd-telemetry-reporter) | NO | NO (artifacts only) |
+
+## Source of Truth
+
+Full guard policy: `.claude/skills/tdd-integration/policies/guard-rules.md`
+Full orchestration: `.claude/skills/tdd-integration/skill.md`

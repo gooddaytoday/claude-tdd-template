@@ -14,6 +14,8 @@ import {
   logViolationEvent,
   ViolationEvent,
   getProjectRoot,
+  formatOutput,
+  PermissionDecision,
 } from '../../../.claude/hooks/prevent-test-edit';
 
 let tmpDir: string;
@@ -67,6 +69,20 @@ describe('handleFileEdit - test file protection', () => {
 
   it('DENY: Write to tests/ when activeSubagent=unknown (fail-closed)', () => {
     setupState('unknown');
+    const result = handleFileEdit('Write', { file_path: 'tests/unit/foo.test.ts', content: 'test' });
+
+    expect(result.hookSpecificOutput?.permissionDecision).toBe('deny');
+    expect(result.hookSpecificOutput?.permissionDecisionReason).toContain('unknown state');
+  });
+
+  it('DENY: Write to tests/ when persisted state belongs to another session (fail-closed unknown)', () => {
+    writeState({
+      activeSubagent: 'tdd-implementer',
+      lastUpdated: new Date().toISOString(),
+      sessionId: 'other-session-999',
+    });
+    setCurrentSessionId('test-session-001');
+
     const result = handleFileEdit('Write', { file_path: 'tests/unit/foo.test.ts', content: 'test' });
 
     expect(result.hookSpecificOutput?.permissionDecision).toBe('deny');
@@ -584,7 +600,7 @@ describe('readState - edge cases', () => {
     expect(result.activeSubagent).toBe('unknown');
   });
 
-  it('returns main when session ID differs from current session', () => {
+  it('returns unknown when session ID differs from current session', () => {
     // Write a state for a different session
     writeState({
       activeSubagent: 'tdd-implementer',
@@ -596,7 +612,7 @@ describe('readState - edge cases', () => {
     setCurrentSessionId('new-session-001');
 
     const result = readState();
-    expect(result.activeSubagent).toBe('main');
+    expect(result.activeSubagent).toBe('unknown');
   });
 
   it('returns unknown state when file is missing', () => {
@@ -654,6 +670,97 @@ describe('handleFileEdit - MultiEdit edits array', () => {
 
     expect(result.hookSpecificOutput?.permissionDecision).toBe('ask');
     expect(result.hookSpecificOutput?.permissionDecisionReason).toContain('skip');
+  });
+});
+
+// ============================================================================
+// 4.13 formatOutput dual-environment output -- 8 test cases
+// ============================================================================
+describe('formatOutput dual-environment output', () => {
+  const originalCursorVersion = process.env.CURSOR_VERSION;
+
+  afterEach(() => {
+    if (originalCursorVersion === undefined) {
+      delete process.env.CURSOR_VERSION;
+    } else {
+      process.env.CURSOR_VERSION = originalCursorVersion;
+    }
+  });
+
+  // Claude Code format tests (no CURSOR_VERSION)
+  describe('Claude Code format (no CURSOR_VERSION)', () => {
+    beforeEach(() => {
+      delete process.env.CURSOR_VERSION;
+    });
+
+    it('formatOutput(deny, reason) returns exitCode 0 and JSON with hookSpecificOutput.permissionDecision: deny', () => {
+      const result = formatOutput('deny', 'some reason');
+
+      expect(result.exitCode).toBe(0);
+      const parsed = JSON.parse(result.json) as { hookSpecificOutput?: { permissionDecision?: string } };
+      expect(parsed.hookSpecificOutput?.permissionDecision).toBe('deny');
+    });
+
+    it('formatOutput(deny, reason) JSON includes permissionDecisionReason', () => {
+      const result = formatOutput('deny', 'my reason');
+
+      const parsed = JSON.parse(result.json) as { hookSpecificOutput?: { permissionDecisionReason?: string } };
+      expect(parsed.hookSpecificOutput?.permissionDecisionReason).toBe('my reason');
+    });
+
+    it('formatOutput(allow) returns exitCode 0 and JSON with hookSpecificOutput.permissionDecision: allow', () => {
+      const result = formatOutput('allow');
+
+      expect(result.exitCode).toBe(0);
+      const parsed = JSON.parse(result.json) as { hookSpecificOutput?: { permissionDecision?: string } };
+      expect(parsed.hookSpecificOutput?.permissionDecision).toBe('allow');
+    });
+
+    it('formatOutput(ask, reason) returns exitCode 0 and JSON with hookSpecificOutput.permissionDecision: ask', () => {
+      const result = formatOutput('ask', 'please confirm');
+
+      expect(result.exitCode).toBe(0);
+      const parsed = JSON.parse(result.json) as { hookSpecificOutput?: { permissionDecision?: string } };
+      expect(parsed.hookSpecificOutput?.permissionDecision).toBe('ask');
+    });
+  });
+
+  // Cursor format tests (CURSOR_VERSION='1.0')
+  describe('Cursor format (CURSOR_VERSION=1.0)', () => {
+    beforeEach(() => {
+      process.env.CURSOR_VERSION = '1.0';
+    });
+
+    it('formatOutput(deny, reason) returns exitCode 2 and JSON with decision: deny', () => {
+      const result = formatOutput('deny', 'blocked reason');
+
+      expect(result.exitCode).toBe(2);
+      const parsed = JSON.parse(result.json) as { decision?: string };
+      expect(parsed.decision).toBe('deny');
+    });
+
+    it('formatOutput(deny, reason) JSON includes reason field', () => {
+      const result = formatOutput('deny', 'blocked reason');
+
+      const parsed = JSON.parse(result.json) as { reason?: string };
+      expect(parsed.reason).toBe('blocked reason');
+    });
+
+    it('formatOutput(allow) returns exitCode 0 and JSON with decision: allow', () => {
+      const result = formatOutput('allow');
+
+      expect(result.exitCode).toBe(0);
+      const parsed = JSON.parse(result.json) as { decision?: string };
+      expect(parsed.decision).toBe('allow');
+    });
+
+    it('formatOutput(ask, reason) returns exitCode 2 and JSON with decision: deny (ask mapped to deny in Cursor)', () => {
+      const result = formatOutput('ask', 'needs confirmation');
+
+      expect(result.exitCode).toBe(2);
+      const parsed = JSON.parse(result.json) as { decision?: string };
+      expect(parsed.decision).toBe('deny');
+    });
   });
 });
 

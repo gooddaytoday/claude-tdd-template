@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "subagentStart": [
+      {
+        "command": "npx tsx .claude/hooks/prevent-test-edit.ts",
+        "timeout": 10
+      }
+    ],
+    "sessionStart": [
+      {
+        "command": "npx tsx .claude/hooks/cursor-session-init.ts",
+        "timeout": 5
+      }
+    ]
+  }
+}
