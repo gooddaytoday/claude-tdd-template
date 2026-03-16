@@ -327,8 +327,8 @@ export function writeState(state: GuardState): void {
 }
 
 export function extractSubagentName(toolInput: Record<string, unknown>): string | null {
-  const name = toolInput.subagent_type as string | undefined;
-  return name || null;
+  const raw = toolInput.subagent_type;
+  return typeof raw === 'string' && raw.length > 0 ? raw : null;
 }
 
 export function normalizePath(filePath: string): string {
