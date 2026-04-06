@@ -1,6 +1,6 @@
-# Pre-Phase: Determine Test Type and Build Context Packet
+# Pre-Phase: Determine Test Type, Slicing Mode, and Build Context Packet
 
-Execute before RED phase. Assembles the Context Packet that all subsequent phases receive.
+Execute before PLAN phase (vertical) or RED phase (horizontal). Assembles the Context Packet that all subsequent phases receive.
 
 ## Step 1: Get Current Task
 
@@ -43,7 +43,14 @@ If the current task ID contains a dot (e.g., "5.2"), this is a **subtask**:
 | queue, worker, job | calculate, transform, convert |
 | connection, client | type, interface, schema |
 
-## Step 4: Assemble Context Packet
+## Step 4: Determine Slicing Mode
+
+**Priority Chain (use first match):**
+
+1. **Explicit argument**: If `--slice=vertical|horizontal` provided, use it
+2. **Default**: `vertical`
+
+## Step 5: Assemble Context Packet
 
 Build the Context Packet per schema defined in `schemas/context-packet.md`:
 
@@ -63,6 +70,15 @@ Build the Context Packet per schema defined in `schemas/context-packet.md`:
 - Type source: [directive | task-master | heuristics | user]
 - Scope restriction: Work ONLY on subtask [ID]. Do NOT implement other subtasks.
 
+### Slicing Mode
+- Mode: [vertical | horizontal]
+- Source: [argument | default]
+
+### Behavior Plan (populated in PLAN phase, vertical only)
+- Total behaviors: (pending)
+- Current behavior: (pending)
+- Behaviors: (pending)
+
 ### Accumulated State
 - Changed files: (all pending)
 - Phase history: (all pending)
@@ -73,7 +89,8 @@ Build the Context Packet per schema defined in `schemas/context-packet.md`:
 
 ## Output
 
-Pass `Context Packet` and `test_type` to RED phase delegation.
+- If `Mode = vertical`: pass Context Packet to PLAN phase (read `phases/plan.md`)
+- If `Mode = horizontal`: pass Context Packet and `test_type` directly to RED phase
 
 ## Failure Playbook
 

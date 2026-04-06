@@ -12,21 +12,26 @@
 
 ## TDD Philosophy (Test-Driven Development)
 
-This project uses strict TDD with Red-Green-Refactor cycle using isolated subagents.
+This project uses strict TDD with Red-Green-Refactor cycle using isolated subagents and **vertical slicing** (one test → one implementation → repeat).
 
 ### Core Principles
+- **Vertical Slicing**: Write ONE test, implement it, repeat — never write all tests upfront
 - **Test First**: ALWAYS write failing tests before implementation
-- **Minimal Implementation**: Write only what tests require
+- **Behavior-Focused**: Tests verify observable behavior through public interfaces, not implementation details
+- **Minimal Implementation**: Write only what the current test requires
 - **Tests are Sacred**: NEVER modify tests to make them pass
 - **Context Isolation**: Each TDD phase uses dedicated subagent
 
 ### TDD Workflow
-1. **RED Phase** (`tdd-test-writer`): Write failing test first
-2. **GREEN Phase** (`tdd-implementer`): Implement minimal code to pass
-3. **REFACTOR Phase** (`tdd-refactorer`): Improve code quality
+1. **PLAN Phase** (orchestrator): Decompose feature into behaviors, confirm with user
+2. **RED→GREEN Loop**: For each behavior:
+   - **RED** (`tdd-test-writer`): Write ONE failing test for one behavior
+   - **GREEN** (`tdd-implementer`): Implement minimal code to pass ALL tests
+3. **REFACTOR Phase** (`tdd-refactorer`): Improve code quality after all behaviors implemented
 
 ### Commands
-- `/tdd-integration` - Invoke full TDD cycle for feature implementation
+- `/tdd-integration` - Invoke full TDD cycle with vertical slicing (default)
+- `/tdd-integration --slice=horizontal` - Legacy mode: all tests first, then all implementation
 - `/tdd-full-review` - Full Task Review for last subtask (architecture + documentation)
 - Subagents are automatically delegated by the skill
 
@@ -57,8 +62,9 @@ The TDD system automatically determines whether to write unit or integration tes
 **Reference**: See `.claude/utils/detect-test-type.md` for full algorithm.
 
 ### Phase Gates
-- **RED**: Test must FAIL before proceeding to GREEN
-- **GREEN**: Test must PASS before proceeding to REFACTOR
+- **PLAN**: User must confirm behavior list before first RED
+- **RED[i]**: Test must FAIL before proceeding to GREEN[i]
+- **GREEN[i]**: ALL tests must PASS before proceeding to next RED or REFACTOR
 - **REFACTOR**: Tests must stay GREEN after changes
 
 ### When to Use TDD

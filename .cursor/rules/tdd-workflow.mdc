@@ -15,12 +15,20 @@ Activate TDD cycle when the user asks to:
 
 Do NOT use TDD for: bug fixes, documentation, configuration, pure refactoring, git operations.
 
-## 8-Phase Cycle
+## Vertical Slicing (default)
 
-1. **PRE-PHASE**: Determine test type (unit/integration/both) and gather task context
-2. **RED**: Invoke `tdd-test-writer` -- write failing test. Gate: test MUST fail with assertion error
-3. **GREEN**: Invoke `tdd-implementer` -- minimal implementation. Gate: test MUST pass
-4. **REFACTOR**: Invoke `tdd-refactorer` -- improve quality. Gate: tests stay green
+The TDD cycle uses **vertical slicing**: one test → one implementation → repeat. Each behavior gets its own RED→GREEN iteration. This prevents writing all tests upfront (horizontal slicing), ensuring each test is informed by the previous implementation.
+
+Use `--slice=horizontal` to fall back to legacy behavior (all tests first, then all implementation).
+
+## Phase Cycle
+
+1. **PRE-PHASE**: Determine test type (unit/integration/both), slicing mode, and gather task context
+2. **PLAN** (vertical only): Decompose feature into behaviors, select tracer bullet, confirm with user
+3. **RED→GREEN LOOP** (vertical): For each behavior from the plan:
+   - Invoke `tdd-test-writer` for ONE behavior. Gate: test MUST fail with assertion error
+   - Invoke `tdd-implementer` for that behavior. Gate: ALL tests MUST pass
+4. **REFACTOR**: Invoke `tdd-refactorer` after all behaviors. Gate: tests stay green
 5. **CODE REVIEW**: Invoke `tdd-code-reviewer` -- quality check. Fix-routing if issues found
 6. **ARCH REVIEW**: Invoke `tdd-architect-reviewer` -- integration check. Full Task Review on last subtask
 7. **DOCS**: Invoke `tdd-documenter` -- save details to task-master
@@ -28,16 +36,16 @@ Do NOT use TDD for: bug fixes, documentation, configuration, pure refactoring, g
 
 ## How to Execute in Cursor
 
-Use the Task tool with the appropriate `subagent_type` for each phase. The orchestrator (main agent) manages transitions and gate verification.
+Use the Task tool with the appropriate `subagent_type` for each phase. The orchestrator (main agent) manages transitions, gate verification, and the RED→GREEN loop.
 
 Read `.claude/skills/tdd-integration/skill.md` for the complete orchestration protocol before starting.
 Read the relevant phase file from `.claude/skills/tdd-integration/phases/` for delegation details.
 
 ## Verification Protocol
 
-After RED, GREEN, and REFACTOR phases, the orchestrator MUST independently run tests:
-- After RED: `npm run test:unit -- <test-file>` or `npm run test:integration -- <test-file>` -- expect failure
-- After GREEN: same command -- expect success
+After each RED and GREEN iteration, and after REFACTOR, the orchestrator MUST independently run tests:
+- After RED[i]: `npm run test:unit -- <test-file>` or `npm run test:integration -- <test-file>` -- expect failure for new test
+- After GREEN[i]: same command -- expect ALL tests (current + previous behaviors) to pass
 - After REFACTOR: same command -- expect success
 
 Do NOT trust Phase Packet status without running the test command yourself.
